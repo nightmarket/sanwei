@@ -18,7 +18,7 @@ const RendererManagerUniforms = {
     value: SHADOW_MAP_TYPES.PCFSoft,
   },
   shadowMapEnabled: {
-    value: false,
+    value: true,
   },
 };
 
@@ -56,6 +56,11 @@ class RendererManagerClass {
   isSingleton = true;
   canvas: HTMLCanvasElement | null = null;
   renderer: any = null;
+  /**
+   * Optional in-shader exposure uniform (e.g. apps that tone-map in the
+   * material/post graph with renderer.toneMapping = NoToneMapping).
+   */
+  exposureUniform: { value: number } | null = null;
 
   async init({ canvas, renderer }: { canvas: HTMLCanvasElement; renderer: any }) {
     this.canvas = canvas;
@@ -77,9 +82,11 @@ class RendererManagerClass {
     this.renderer.shadowMap.enabled = RendererManagerUniforms.shadowMapEnabled.value;
   }
 
-  async initDebug({ debug, pane }: DebugContext) {
-    const folder = pane.addFolder({
-      title: "🖼️ Renderer Manager",
+  async initDebug({ debug, inspectorPane }: DebugContext) {
+    if (!inspectorPane) return;
+
+    const folder = inspectorPane.addFolder({
+      title: "🖼️ Renderer",
       expanded: false,
     });
     debug.register("RendererManager", folder);
@@ -87,9 +94,13 @@ class RendererManagerClass {
     folder
       .addBinding(RendererManagerUniforms.toneMappingExposure, "value", {
         label: "Tone Mapping Exposure",
+        min: RendererManagerUniforms.toneMappingExposure.min,
+        max: RendererManagerUniforms.toneMappingExposure.max,
+        step: RendererManagerUniforms.toneMappingExposure.step,
       })
       .on("change", (ev: any) => {
         this.renderer.toneMappingExposure = ev.value;
+        if (this.exposureUniform) this.exposureUniform.value = ev.value;
       });
 
     const toneParams = { toneMapping: RendererManagerUniforms.toneMapping.value };
