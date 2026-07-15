@@ -16,6 +16,12 @@ export type DebugInitOptions = {
 export class DebugClass {
   isSingleton = true;
   pane: Pane | null = null;
+  /** Second pane: Performance folder + scene inspect controls. */
+  inspectorPane: Pane | null = null;
+  /** @deprecated use inspectorPane */
+  get tunePane() {
+    return this.inspectorPane;
+  }
   perf: PerfMonitor | null = null;
 
   private _renderer: any = null;
@@ -30,7 +36,7 @@ export class DebugClass {
 
   set renderer(value: any) {
     this._renderer = value;
-    if (value && this.pane && !this.perf) {
+    if (value && this.inspectorPane && !this.perf) {
       void this.attachPerf(value);
     }
   }
@@ -62,6 +68,24 @@ export class DebugClass {
     });
     pane.element.classList.add(NO_RAYCAST_CLASS);
     this.pane = pane;
+
+    const hideUi = { value: false };
+    pane
+      .addBinding(hideUi, "value", { label: "Hide UI" })
+      .on("change", (ev: { value: boolean }) => {
+        document.documentElement.classList.toggle("hide-app-ui", ev.value);
+      });
+
+    const inspectorPane = new Pane({
+      id: "debugger-inspector",
+      title: "Inspector",
+      anchor: "top-left",
+      toggleKey: "`",
+      maxHeight: 500,
+    });
+    inspectorPane.element.classList.add(NO_RAYCAST_CLASS);
+    this.inspectorPane = inspectorPane;
+
     this.perfApi = perfApi;
 
     const renderer = this._renderer ?? RendererManager.renderer;
@@ -71,10 +95,14 @@ export class DebugClass {
   }
 
   private async attachPerf(renderer: any) {
-    if (this.perf || !this.pane || !this.perfApi) return;
+    if (this.perf || !this.inspectorPane || !this.perfApi) return;
 
     this.perf = this.perfApi.createPerfMonitor({ renderer });
-    this.perfApi.addPerfMonitors(this.pane, this.perf);
+    const performanceFolder = this.inspectorPane.addFolder({
+      title: "Performance",
+      expanded: true,
+    });
+    this.perfApi.addPerfMonitors(performanceFolder, this.perf, { maxFps: 144 });
   }
 
   register(name: string, folder: any) {
