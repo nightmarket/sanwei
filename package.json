@@ -1,6 +1,6 @@
 {
   "name": "@nightmarket/sanwei",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Three.js / WebGPU scene engine — managers, postprocessing, and debug tooling.",
   "keywords": [
     "three",
@@ -43,7 +43,11 @@
     ".": "./src/index.ts",
     "./constants": "./src/core/constants.ts",
     "./debug": "./src/core/debugHelpers.ts",
-    "./debug-runtime": "./src/core/Debug.ts",
+    "./debug-runtime": {
+      "types": "./src/core/Debug.ts",
+      "production": "./src/core/Debug.production.ts",
+      "default": "./src/core/Debug.ts"
+    },
     "./three": "./src/three/index.ts",
     "./three-webgpu": "./src/three-webgpu/index.ts",
     "./util/*": "./src/util/*.ts",
@@ -61,7 +65,7 @@
   },
   "peerDependencies": {
     "@dimforge/rapier3d": "^0.14.0",
-    "@nightmarket/tiao": "^0.1.2",
+    "@nightmarket/tiao": "^0.2.0",
     "glsl-noise": "^0.0.0",
     "glsl-rotate": "^2.0.1",
     "glslify-loader": "^2.0.0",
@@ -97,7 +101,7 @@
     }
   },
   "devDependencies": {
-    "@nightmarket/tiao": "^0.1.2",
+    "@nightmarket/tiao": "^0.2.0",
     "@types/node": "^22.15.0",
     "@types/three": "^0.178.0",
     "gsap": "^3.13.0",

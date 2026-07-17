@@ -7,9 +7,8 @@
 //   import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three";
 //   import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three-webgpu";
 
-// Modules that do not depend on a THREE binding
+// Modules that do not depend on a THREE binding.
 export * from "./core/constants";
-export { Debug } from "./core/Debug";
 export { Input } from "./core/Input";
 export { RAF } from "./core/RAF";
 export { UIEmitter } from "./core/UIEmitter";

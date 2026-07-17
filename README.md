@@ -29,29 +29,45 @@ import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three-webgpu"
 Core utilities that do not depend on a THREE binding:
 
 ```ts
-import { Debug, Input, RAF, UIEmitter } from "@nightmarket/sanwei";
+import { Input, RAF, UIEmitter } from "@nightmarket/sanwei";
 ```
 
 ### Debug
 
-`IS_DEBUG` is `true` when `NEXT_PUBLIC_IS_DEBUG=true` (Next.js convention). Wire the debug pane through `Manager.init`:
+Debugging is enabled automatically when `NODE_ENV !== "production"` and disabled
+in production. App code should not branch on an environment variable.
+
+`Debug.init()` is agnostic: it creates one generalized **Inspector** pane with Performance monitors (FPS / CPU / GPU / draw calls). Apps add their own folders, bindings, or extra panes on top.
+
+The runtime facade is safe to import normally. The package export resolves to
+the full lazy runtime in development and a no-op module in production, so tiao
+is absent from production bundles:
 
 ```ts
-import { Debug } from "@nightmarket/sanwei";
+import { Debug } from "@nightmarket/sanwei/debug-runtime";
 import { Manager } from "@nightmarket/sanwei/three";
 
 await Manager.init({
   canvas,
   renderer,
-  initDebug: async () => {
-    await Debug.init();
-    return {
-      debug: Debug,
-      pane: Debug.pane!,
-      inspectorPane: Debug.inspectorPane,
-      tunePane: Debug.inspectorPane,
-    };
-  },
+  initDebug: () =>
+    Debug.init({
+      renderer,
+      setup: ({ pane }) => {
+        const folder = pane.addFolder({ title: "My Controls" });
+        return () => folder.dispose();
+      },
+    }),
+});
+```
+
+Components can contribute controls before or after initialization without polling:
+
+```ts
+const dispose = Debug.setup(({ pane }) => {
+  const folder = pane.addFolder({ title: "Physics" });
+  // add bindings...
+  return () => folder.dispose();
 });
 ```
 
@@ -60,8 +76,8 @@ await Manager.init({
 | Export | Description |
 | --- | --- |
 | `@nightmarket/sanwei/constants` | Shared constants (`IS_DEBUG`, pass types, …) |
-| `@nightmarket/sanwei/debug` | `DebugContext` helper types |
-| `@nightmarket/sanwei/debug-runtime` | `Debug` singleton (same as root `Debug`) |
+| `@nightmarket/sanwei/debug` | `DebugContext` helper types (no runtime) |
+| `@nightmarket/sanwei/debug-runtime` | Development-only Debug facade |
 | `@nightmarket/sanwei/util/*` | Utilities (`camera`, `viewport`, `bindings`, …) |
 | `@nightmarket/sanwei/extras/*` | Optional extras (`Physics`, `Synth`, `ScreenQuad`, …) |
 
