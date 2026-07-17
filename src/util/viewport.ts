@@ -1,15 +1,20 @@
-export const getViewportHeight = (
-  depth, // include camera offset
-  fov
-) => {
-  // vertical fov in radians
-  const vFOV = (fov * Math.PI) / 180;
+type ViewportCamera = {
+  position: { z: number };
+  fov: number;
+  aspect: number;
+};
 
-  // Math.abs to ensure the result is always positive
+/** Visible height at a given camera depth (depth includes camera offset). */
+export const getViewportHeight = (depth: number, fov: number) => {
+  const vFOV = (fov * Math.PI) / 180;
   return 2 * Math.tan(vFOV / 2) * Math.abs(depth);
 };
 
-export const getVisibleDimensionsAtZDepth = (depth, camera, ignoreCameraOffset = false) => {
+export const getVisibleDimensionsAtZDepth = (
+  depth: number,
+  camera: ViewportCamera,
+  ignoreCameraOffset = false
+) => {
   const relativeDepth = depth - (ignoreCameraOffset ? 0 : camera.position.z);
 
   if (relativeDepth === 0) {

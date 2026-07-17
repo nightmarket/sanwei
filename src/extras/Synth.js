@@ -15,7 +15,6 @@ class SynthClass {
       },
     });
 
-    // Add reverb for spacey tail
     const reverb = new Tone.Reverb({
       decay: 4,
       preDelay: 0.01,
@@ -28,7 +27,7 @@ class SynthClass {
   }
 
   clickSound = () => {
-    this.synth.triggerAttackRelease("C5", "4n"); // short and snappy
+    this.synth.triggerAttackRelease("C5", "4n");
   };
 }
 

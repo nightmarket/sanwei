@@ -1,11 +1,11 @@
 import gsap from "gsap";
+import type { PerspectiveCamera, Vector3 } from "three";
 import { THREE } from "../three-adapter";
 
-// TODO: handle moving target
 export const transitionTo = (
-  from: typeof THREE.PerspectiveCamera,
-  to: typeof THREE.PerspectiveCamera,
-  _target?: typeof THREE.Vector3
+  from: PerspectiveCamera,
+  to: PerspectiveCamera,
+  _target?: Vector3
 ) => {
   // Store the end states of the "to" camera
   const toPos = to.position.clone();

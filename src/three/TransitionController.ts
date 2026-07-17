@@ -44,24 +44,24 @@ export class TransitionController {
         uProgress: { value: 0 },
       },
       vertexShader: /* glsl */ `
-				varying vec2 vUv;
-				void main() {
-					vUv = uv;
-					gl_Position = vec4(position, 1.0);
-				}
-			`,
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position, 1.0);
+        }
+      `,
       fragmentShader: /* glsl */ `
-				precision highp float;
-				uniform sampler2D tScene1;
-				uniform sampler2D tScene2;
-				uniform float uProgress;
-				varying vec2 vUv;
-				void main() {
-					vec4 c1 = texture2D(tScene1, vUv);
-					vec4 c2 = texture2D(tScene2, vUv);
-					gl_FragColor = mix(c1, c2, uProgress);
-				}
-			`,
+        precision highp float;
+        uniform sampler2D tScene1;
+        uniform sampler2D tScene2;
+        uniform float uProgress;
+        varying vec2 vUv;
+        void main() {
+          vec4 c1 = texture2D(tScene1, vUv);
+          vec4 c2 = texture2D(tScene2, vUv);
+          gl_FragColor = mix(c1, c2, uProgress);
+        }
+      `,
     });
 
     this.quadGeometry = new THREE.PlaneGeometry(2, 2);

@@ -73,7 +73,6 @@ class RendererManagerClass {
       this.renderer.debug.onShaderError = (gl, program, vs, fs) => console.error(gl, program, vs, fs);
     }
 
-    // this.renderer.info.autoReset = !IS_DEBUG;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.renderer.toneMapping = getToneMappingTypes()[RendererManagerUniforms.toneMapping.value];

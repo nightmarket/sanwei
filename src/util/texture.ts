@@ -1,3 +1,4 @@
+import type { CanvasTexture } from "three";
 import { THREE } from "../three-adapter";
 
 const DEFAULT_GLYPH_CHARS = " .:-=+*#%@";
@@ -13,7 +14,7 @@ export interface CreateGlyphTextureOptions {
 export function createGlyphTexture(
   asciiChars: string,
   options: CreateGlyphTextureOptions = {}
-): { texture: THREE.CanvasTexture; charCount: number } {
+): { texture: CanvasTexture; charCount: number } {
   const { charSize = 16 } = options;
   const fontFamily = "monospace";
   const canvas = document.createElement("canvas");

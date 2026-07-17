@@ -22,6 +22,7 @@ export {
   CameraManager,
 } from "../core/CameraManager";
 export * from "../core/constants";
+export { Device } from "../core/Device";
 export { Input } from "../core/Input";
 export { IS_DEBUG, Manager } from "../core/Manager";
 export type { MouseDragState, MouseScrollState } from "../core/Mouse";

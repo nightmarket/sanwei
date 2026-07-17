@@ -1,5 +1,5 @@
-// THREE adapter - allows core modules to work with both "three" and "three/webgpu"
-// The actual THREE module is bound by the entry point (sanwei/three or sanwei/three-webgpu)
+// THREE adapter — core modules work with both "three" and "three/webgpu".
+// Bound by @nightmarket/sanwei/three or @nightmarket/sanwei/three-webgpu.
 
 type ThreeModule = typeof import("three");
 
@@ -12,7 +12,7 @@ export function bindThree(three: ThreeModule) {
 export function getThree(): ThreeModule {
   if (!_THREE) {
     throw new Error(
-      "THREE has not been initialized. Import from '@repo/sanwei/three' or '@repo/sanwei/three-webgpu' instead of '@repo/sanwei'."
+      "THREE has not been initialized. Import from '@nightmarket/sanwei/three' or '@nightmarket/sanwei/three-webgpu' instead of '@nightmarket/sanwei'."
     );
   }
   return _THREE;

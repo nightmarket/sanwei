@@ -1,9 +1,3 @@
-// TODO: INSPO: https://github.com/plepers/nanogl-post/
-// https://github.com/makemepulse/2024-kaizen-public/tree/develop
-// https://github.com/Experience-Monks/webgl-react-boilerplate.git
-// https://github.com/Experience-Monks/nextjs-boilerplate/tree/main/src
-// https://github.com/yiwenl/Alfrid
-
 import type * as THREE from "three";
 import { AfterimagePass } from "three/addons/postprocessing/AfterimagePass.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
