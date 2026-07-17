@@ -1,22 +1,34 @@
-import type { Pane } from "@nightmarket/tiao";
+import type { Pane, PaneOptions } from "@nightmarket/tiao/core";
 import type { PerfMonitor } from "@nightmarket/tiao/perf-pane";
 import type { Camera } from "three";
-import { NO_RAYCAST_CLASS } from "./constants";
-import { RendererManager } from "./RendererManager";
+import { IS_DEBUG, NO_RAYCAST_CLASS } from "./constants";
 
 export type DebugInitOptions = {
-  /** @deprecated tiao panes float by default; kept for call-site compat */
-  containerId?: string;
-  /** @deprecated perf monitors live in the pane; kept for call-site compat */
-  statsContainerId?: string;
-  title?: string;
-  anchor?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  renderer?: any;
+  setup?: DebugSetup;
 };
 
+export type DebugSetupContext = {
+  debug: DebugClass;
+  pane: Pane;
+  inspectorPane: Pane;
+  /** @deprecated use inspectorPane */
+  tunePane: Pane;
+  createPane: (options?: PaneOptions) => Pane;
+};
+
+export type DebugSetup = (context: DebugSetupContext) => void | (() => void);
+
+type SetupEntry = {
+  callback: DebugSetup;
+  cleanup?: () => void;
+  mounted: boolean;
+};
+
+/** Development-only, app-agnostic debug host. */
 export class DebugClass {
   isSingleton = true;
   pane: Pane | null = null;
-  /** Second pane: Performance folder + scene inspect controls. */
   inspectorPane: Pane | null = null;
   /** @deprecated use inspectorPane */
   get tunePane() {
@@ -27,7 +39,9 @@ export class DebugClass {
   private _renderer: any = null;
   private folders = new Map<string, any>();
   private queue = new Map<string, Array<(folder: any) => void>>();
+  private setups = new Set<SetupEntry>();
   private initPromise: Promise<void> | null = null;
+  private PaneClass: typeof import("@nightmarket/tiao/core").Pane | null = null;
   private perfApi: typeof import("@nightmarket/tiao/perf-pane") | null = null;
 
   get renderer() {
@@ -35,63 +49,108 @@ export class DebugClass {
   }
 
   set renderer(value: any) {
+    if (!IS_DEBUG) return;
     this._renderer = value;
     if (value && this.inspectorPane && !this.perf) {
       void this.attachPerf(value);
     }
   }
 
-  async init(options: DebugInitOptions = {}) {
-    if (this.pane) return;
-    if (this.initPromise) return this.initPromise;
+  async init({ renderer, setup }: DebugInitOptions = {}) {
+    if (!IS_DEBUG) return null;
+    if (renderer) this.renderer = renderer;
 
-    this.initPromise = this.doInit(options);
-    try {
-      await this.initPromise;
-    } finally {
-      this.initPromise = null;
+    if (!this.inspectorPane) {
+      if (!this.initPromise) {
+        this.initPromise = this.doInit();
+      }
+      try {
+        await this.initPromise;
+      } finally {
+        this.initPromise = null;
+      }
     }
+
+    if (setup) this.setup(setup);
+    this.mountSetups();
+    return this.createContext();
   }
 
-  private async doInit(options: DebugInitOptions) {
+  private async doInit() {
     const [{ Pane }, perfApi] = await Promise.all([
-      import("@nightmarket/tiao"),
+      import("@nightmarket/tiao/core"),
       import("@nightmarket/tiao/perf-pane"),
     ]);
 
     const pane = new Pane({
-      id: "debugger",
-      title: options.title ?? "Debug",
-      anchor: options.anchor ?? "top-right",
-      toggleKey: "`",
-      maxHeight: 500,
-    });
-    pane.element.classList.add(NO_RAYCAST_CLASS);
-    this.pane = pane;
-
-    const hideUi = { value: false };
-    pane
-      .addBinding(hideUi, "value", { label: "Hide UI" })
-      .on("change", (ev: { value: boolean }) => {
-        document.documentElement.classList.toggle("hide-app-ui", ev.value);
-      });
-
-    const inspectorPane = new Pane({
       id: "debugger-inspector",
       title: "Inspector",
       anchor: "top-left",
       toggleKey: "`",
       maxHeight: 500,
     });
-    inspectorPane.element.classList.add(NO_RAYCAST_CLASS);
-    this.inspectorPane = inspectorPane;
+    pane.element.classList.add(NO_RAYCAST_CLASS);
 
+    this.PaneClass = Pane;
+    this.inspectorPane = pane;
+    this.pane = pane;
     this.perfApi = perfApi;
 
-    const renderer = this._renderer ?? RendererManager.renderer;
-    if (renderer) {
-      await this.attachPerf(renderer);
+    if (this._renderer) {
+      await this.attachPerf(this._renderer);
     }
+  }
+
+  setup(callback: DebugSetup) {
+    if (!IS_DEBUG) return () => {};
+
+    const entry: SetupEntry = { callback, mounted: false };
+    this.setups.add(entry);
+    if (this.inspectorPane) this.mountSetup(entry);
+
+    return () => {
+      entry.cleanup?.();
+      this.setups.delete(entry);
+    };
+  }
+
+  async run<T>(callback: () => T | Promise<T>) {
+    if (!IS_DEBUG) return undefined;
+    return callback();
+  }
+
+  createPane(options: PaneOptions = {}) {
+    if (!this.PaneClass) {
+      throw new Error("[Debug] createPane() requires Debug.init() to resolve first");
+    }
+
+    const pane = new this.PaneClass(options);
+    pane.element.classList.add(NO_RAYCAST_CLASS);
+    return pane;
+  }
+
+  private createContext(): DebugSetupContext | null {
+    if (!this.pane || !this.inspectorPane) return null;
+    return {
+      debug: this,
+      pane: this.pane,
+      inspectorPane: this.inspectorPane,
+      tunePane: this.inspectorPane,
+      createPane: (options) => this.createPane(options),
+    };
+  }
+
+  private mountSetups() {
+    for (const entry of this.setups) this.mountSetup(entry);
+  }
+
+  private mountSetup(entry: SetupEntry) {
+    if (entry.mounted) return;
+    const context = this.createContext();
+    if (!context) return;
+
+    entry.mounted = true;
+    entry.cleanup = entry.callback(context) ?? undefined;
   }
 
   private async attachPerf(renderer: any) {
@@ -151,6 +210,26 @@ export class DebugClass {
   async createOrbitControls(camera: Camera, domElement: HTMLElement) {
     const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
     return new OrbitControls(camera, domElement);
+  }
+
+  dispose() {
+    for (const entry of this.setups) entry.cleanup?.();
+    this.setups.clear();
+    this.perf?.dispose();
+
+    if (this.pane && this.pane !== this.inspectorPane) {
+      this.pane.dispose();
+    }
+    this.inspectorPane?.dispose();
+
+    this.pane = null;
+    this.inspectorPane = null;
+    this.perf = null;
+    this._renderer = null;
+    this.PaneClass = null;
+    this.perfApi = null;
+    this.folders.clear();
+    this.queue.clear();
   }
 
   update() {

@@ -101,6 +101,7 @@ class ManagerClass {
     Input.destroy();
     Sound.destroy();
     RendererManager.destroy();
+    this.debugContext?.debug.dispose();
     this.debugContext = null;
   }
 }

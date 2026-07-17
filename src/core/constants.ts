@@ -1,4 +1,10 @@
-export const IS_DEBUG = process.env.NEXT_PUBLIC_IS_DEBUG === "true";
+/**
+ * Debug tooling is development-only by design.
+ *
+ * Bundlers replace `process.env.NODE_ENV` at build time, allowing debug-only
+ * branches and dynamic imports to be removed from production builds.
+ */
+export const IS_DEBUG = process.env.NODE_ENV !== "production";
 export const NO_RAYCAST_CLASS = "no-raycast";
 
 export const TONE_MAPPING_TYPES = {
