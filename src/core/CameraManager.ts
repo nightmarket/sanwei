@@ -5,6 +5,7 @@ import { RendererManager } from "./RendererManager";
 
 type DebugOrbitControls = {
   enabled: boolean;
+  enableDamping: boolean;
   update(): void;
   dispose(): void;
 };

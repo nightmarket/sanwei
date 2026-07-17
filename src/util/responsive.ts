@@ -1,17 +1,17 @@
-export const isTouchDevice = () => {
+export const isTouchDevice = (): boolean => {
   if (typeof window !== "undefined" && navigator) {
     const userAgent = navigator.userAgent;
 
-    return (
+    return Boolean(
       window.matchMedia?.("(pointer: coarse)").matches ||
-      navigator.maxTouchPoints > 0 ||
-      userAgent.match(/Android/i) ||
-      userAgent.match(/webOS/i) ||
-      userAgent.match(/iPhone/i) ||
-      userAgent.match(/iPad/i) ||
-      userAgent.match(/iPod/i) ||
-      userAgent.match(/BlackBerry/i) ||
-      userAgent.match(/Windows Phone/i)
+        navigator.maxTouchPoints > 0 ||
+        userAgent.match(/Android/i) ||
+        userAgent.match(/webOS/i) ||
+        userAgent.match(/iPhone/i) ||
+        userAgent.match(/iPad/i) ||
+        userAgent.match(/iPod/i) ||
+        userAgent.match(/BlackBerry/i) ||
+        userAgent.match(/Windows Phone/i)
     );
   }
 

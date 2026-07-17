@@ -1,6 +1,6 @@
-import type { Pane } from "@tiao/core";
-import type { PerfMonitor } from "@tiao/perf-pane";
-import { THREE } from "../three-adapter";
+import type { Pane } from "@nightmarket/tiao";
+import type { PerfMonitor } from "@nightmarket/tiao/perf-pane";
+import type { Camera } from "three";
 import { NO_RAYCAST_CLASS } from "./constants";
 import { RendererManager } from "./RendererManager";
 
@@ -28,7 +28,7 @@ export class DebugClass {
   private folders = new Map<string, any>();
   private queue = new Map<string, Array<(folder: any) => void>>();
   private initPromise: Promise<void> | null = null;
-  private perfApi: typeof import("@tiao/perf-pane") | null = null;
+  private perfApi: typeof import("@nightmarket/tiao/perf-pane") | null = null;
 
   get renderer() {
     return this._renderer;
@@ -55,8 +55,8 @@ export class DebugClass {
 
   private async doInit(options: DebugInitOptions) {
     const [{ Pane }, perfApi] = await Promise.all([
-      import("@tiao/core"),
-      import("@tiao/perf-pane"),
+      import("@nightmarket/tiao"),
+      import("@nightmarket/tiao/perf-pane"),
     ]);
 
     const pane = new Pane({
@@ -148,13 +148,13 @@ export class DebugClass {
     btn.on("click", cb);
   }
 
-  async createOrbitControls(camera: THREE.Camera, domElement: HTMLElement) {
+  async createOrbitControls(camera: Camera, domElement: HTMLElement) {
     const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
     return new OrbitControls(camera, domElement);
   }
 
   update() {
-    // Perf sampling is owned by @tiao/perf-pane (ticker + render instrumentation).
+    // Perf sampling is owned by @nightmarket/tiao/perf-pane (ticker + render instrumentation).
   }
 }
 

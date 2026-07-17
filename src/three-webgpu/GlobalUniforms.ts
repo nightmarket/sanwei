@@ -1,3 +1,4 @@
+import type { Color, Vector2 } from "three";
 import { uniform } from "three/tsl";
 import type { UniformNode } from "three/webgpu";
 import { THREE } from "../three-adapter";
@@ -5,8 +6,8 @@ import { THREE } from "../three-adapter";
 // Lazy-initialized uniforms to avoid accessing THREE before it's bound
 let _uniforms: {
   uTime: UniformNode<number>;
-  uScreen: UniformNode<THREE.Vector2>;
-  uBackground: UniformNode<THREE.Color>;
+  uScreen: UniformNode<Vector2>;
+  uBackground: UniformNode<Color>;
   uPixelRatio: UniformNode<number>;
 } | null = null;
 

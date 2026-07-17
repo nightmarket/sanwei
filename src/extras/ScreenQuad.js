@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Manager } from "../core/Manager";
+import { RendererManager } from "../core/RendererManager";
 
 const triangleGeometry = new THREE.BufferGeometry();
 const vertices = new Float32Array([
@@ -34,14 +34,13 @@ export class ScreenQuad {
   constructor() {
     this.scene = new THREE.Scene();
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0);
-
-    this.renderTarget = new THREE.WebGLRenderTarget(1280, 1280); // TODO:
+    this.renderTarget = new THREE.WebGLRenderTarget(1280, 1280);
   }
 
   update() {
-    // TODO: check tonemapping
-    Manager.renderer.setRenderTarget(this.renderTarget);
-    Manager.renderer.render(this.scene, this.camera);
-    Manager.renderer.setRenderTarget(null);
+    const { renderer } = RendererManager;
+    renderer.setRenderTarget(this.renderTarget);
+    renderer.render(this.scene, this.camera);
+    renderer.setRenderTarget(null);
   }
 }
