@@ -75,7 +75,7 @@ const dispose = Debug.setup(({ pane }) => {
 
 | Export | Description |
 | --- | --- |
-| `@nightmarket/sanwei/constants` | Shared constants (`IS_DEBUG`, pass types, …) |
+| `@nightmarket/sanwei/constants` | Shared constants and gates (`isDebugEnabled()`, pass types, …) |
 | `@nightmarket/sanwei/debug` | `DebugContext` helper types (no runtime) |
 | `@nightmarket/sanwei/debug-runtime` | Development-only Debug facade |
 | `@nightmarket/sanwei/util/*` | Utilities (`camera`, `viewport`, `bindings`, …) |

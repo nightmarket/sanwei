@@ -26,7 +26,7 @@ export {
 export * from "../core/constants";
 export { Device } from "../core/Device";
 export { Input } from "../core/Input";
-export { IS_DEBUG, Manager } from "../core/Manager";
+export { Manager } from "../core/Manager";
 export type { MouseDragState, MouseScrollState } from "../core/Mouse";
 export { Mouse, SCROLL_DIRECTION } from "../core/Mouse";
 export { RAF } from "../core/RAF";

@@ -1,10 +1,10 @@
 /**
- * Debug tooling is development-only by design.
- *
- * Bundlers replace `process.env.NODE_ENV` at build time, allowing debug-only
- * branches and dynamic imports to be removed from production builds.
+ * Debug gating follows tiao's debug level: the `DEBUG_LEVEL` env variable
+ * (read through the bundler's prefix, e.g. `NEXT_PUBLIC_DEBUG_LEVEL`) plus the
+ * `?debug` URL param. Runtime check — evaluate at the moment of gating, not at
+ * module scope.
  */
-export const IS_DEBUG = process.env.NODE_ENV !== "production";
+export { isTiaoEnabled as isDebugEnabled } from "@nightmarket/tiao";
 export const NO_RAYCAST_CLASS = "no-raycast";
 
 export const TONE_MAPPING_TYPES = {
