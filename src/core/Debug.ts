@@ -1,7 +1,7 @@
 import type { Pane, PaneOptions } from "@nightmarket/tiao/core";
 import type { PerfMonitor } from "@nightmarket/tiao/perf-pane";
 import type { Camera } from "three";
-import { IS_DEBUG, NO_RAYCAST_CLASS } from "./constants";
+import { isDebugEnabled, NO_RAYCAST_CLASS } from "./constants";
 
 export type DebugInitOptions = {
   renderer?: any;
@@ -49,7 +49,7 @@ export class DebugClass {
   }
 
   set renderer(value: any) {
-    if (!IS_DEBUG) return;
+    if (!isDebugEnabled()) return;
     this._renderer = value;
     if (value && this.inspectorPane && !this.perf) {
       void this.attachPerf(value);
@@ -57,7 +57,7 @@ export class DebugClass {
   }
 
   async init({ renderer, setup }: DebugInitOptions = {}) {
-    if (!IS_DEBUG) return null;
+    if (!isDebugEnabled()) return null;
     if (renderer) this.renderer = renderer;
 
     if (!this.inspectorPane) {
@@ -102,7 +102,7 @@ export class DebugClass {
   }
 
   setup(callback: DebugSetup) {
-    if (!IS_DEBUG) return () => {};
+    if (!isDebugEnabled()) return () => {};
 
     const entry: SetupEntry = { callback, mounted: false };
     this.setups.add(entry);
@@ -115,7 +115,7 @@ export class DebugClass {
   }
 
   async run<T>(callback: () => T | Promise<T>) {
-    if (!IS_DEBUG) return undefined;
+    if (!isDebugEnabled()) return undefined;
     return callback();
   }
 

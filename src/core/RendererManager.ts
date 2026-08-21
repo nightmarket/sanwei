@@ -1,5 +1,5 @@
 import { THREE } from "../three-adapter";
-import { IS_DEBUG, SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from "./constants";
+import { isDebugEnabled, SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from "./constants";
 import type { DebugContext } from "./debugHelpers";
 import { GlobalUniforms } from "./globalUniformsAdapter";
 
@@ -68,7 +68,7 @@ class RendererManagerClass {
 
     this.resize();
 
-    if (IS_DEBUG) {
+    if (isDebugEnabled()) {
       this.renderer.debug.checkShaderErrors = true;
       this.renderer.debug.onShaderError = (gl, program, vs, fs) => console.error(gl, program, vs, fs);
     }

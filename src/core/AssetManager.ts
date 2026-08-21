@@ -1,6 +1,6 @@
 import { THREE } from "../three-adapter";
 
-import { IS_DEBUG } from "./constants";
+import { isDebugEnabled } from "./constants";
 import { RendererManager } from "./RendererManager";
 
 class AssetManagerClass {
@@ -13,7 +13,7 @@ class AssetManagerClass {
   async init() {
     this.loadingManager = new THREE.LoadingManager();
 
-    if (IS_DEBUG) {
+    if (isDebugEnabled()) {
       this.loadingManager.onProgress = (url: string, itemsLoaded: number, itemsTotal: number) => {
         console.log(`Loading file: ${url}.\nLoaded ${itemsLoaded} of ${itemsTotal} files.`);
       };

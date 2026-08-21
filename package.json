@@ -65,7 +65,7 @@
   },
   "peerDependencies": {
     "@dimforge/rapier3d": "^0.14.0",
-    "@nightmarket/tiao": "^0.2.0",
+    "@nightmarket/tiao": "^0.7.0",
     "glsl-noise": "^0.0.0",
     "glsl-rotate": "^2.0.1",
     "glslify-loader": "^2.0.0",
@@ -101,7 +101,7 @@
     }
   },
   "devDependencies": {
-    "@nightmarket/tiao": "^0.2.0",
+    "@nightmarket/tiao": "^0.7.0",
     "@types/node": "^22.15.0",
     "@types/three": "^0.178.0",
     "gsap": "^3.13.0",

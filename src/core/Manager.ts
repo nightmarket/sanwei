@@ -11,8 +11,8 @@ import { RendererManager } from "./RendererManager";
 import { SceneManager } from "./SceneManager";
 import { Sound } from "./Sound";
 
-// Re-export IS_DEBUG for backward compat (canonical source is constants.ts)
-export { IS_DEBUG } from "./constants";
+// Re-export for backward compat (canonical source is constants.ts)
+export { isDebugEnabled } from "./constants";
 
 type ManagerInitOptions = {
   canvas: HTMLCanvasElement;
