@@ -86,8 +86,8 @@ This package ships TypeScript source and is meant to be consumed by a bundler (V
 ## Publish
 
 ```sh
-npm login
-npm run publish:package
+pnpm install
+pnpm run publish:package
 ```
 
 ## License
