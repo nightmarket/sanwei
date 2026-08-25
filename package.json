@@ -23,6 +23,7 @@
   "engines": {
     "node": ">=18"
   },
+  "packageManager": "pnpm@10.28.1",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -56,8 +57,8 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "prepublishOnly": "npm run check-types",
-    "publish:package": "npm run check-types && npm publish --access public"
+    "prepublishOnly": "pnpm run check-types",
+    "publish:package": "pnpm run check-types && pnpm publish --access public"
   },
   "dependencies": {
     "detect-gpu": "^5.0.70",
