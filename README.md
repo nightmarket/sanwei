@@ -83,6 +83,13 @@ const dispose = Debug.setup(({ pane }) => {
 
 This package ships TypeScript source and is meant to be consumed by a bundler (Vite, Next.js, etc.). GLTF Draco/Basis paths in `AssetManager` are relative to the app (`./libs/draco/`, `./libs/basis/`).
 
+## Publish
+
+```sh
+npm login
+npm run publish:package
+```
+
 ## License
 
 MIT

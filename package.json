@@ -56,7 +56,8 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "prepublishOnly": "npm run check-types"
+    "prepublishOnly": "npm run check-types",
+    "publish:package": "npm run check-types && npm publish --access public"
   },
   "dependencies": {
     "detect-gpu": "^5.0.70",
