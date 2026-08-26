@@ -1,5 +1,6 @@
 import { THREE } from "../three-adapter";
 import type { DebugContext } from "./debugHelpers";
+import type { SanweiApp } from "./SanweiApp";
 import type { IPost, IScene } from "./types";
 
 /**
@@ -13,6 +14,8 @@ export class BaseScene implements IScene {
   post?: IPost;
   sceneConfig: any;
   folder: any;
+  /** Owning app — assigned by `SceneManager.addScenes` before `init()` runs. */
+  app!: SanweiApp;
 
   constructor(sceneConfig: any) {
     this.scene = new THREE.Scene();

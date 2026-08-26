@@ -6,14 +6,12 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { CameraManager } from "../core/CameraManager";
 import { PassType } from "../core/constants";
 import type { DebugContext } from "../core/debugHelpers";
 import { RAF } from "../core/RAF";
-import { RendererManager } from "../core/RendererManager";
-import type { IPost } from "../core/types";
+import type { SanweiApp } from "../core/SanweiApp";
+import type { IPost, IScene } from "../core/types";
 import { addUniforms } from "../util/bindings";
-import { GlobalUniforms } from "./GlobalUniforms";
 
 export const DEFAULT_PASS_CONFIG = {
   [PassType.RENDER]: { enabled: true },
@@ -45,19 +43,26 @@ async function loadShader(passType: string) {
 
 export class Post implements IPost {
   isSingleton = false;
-  sceneClass: any;
+  sceneClass: IScene;
   passConfig: Record<string, any>;
   passes: Record<string, any> = {};
   composer!: EffectComposer;
   enabled = true;
 
-  constructor(sceneClass: any, passConfig = DEFAULT_PASS_CONFIG) {
+  constructor(sceneClass: IScene, passConfig = DEFAULT_PASS_CONFIG) {
     this.passConfig = passConfig;
     this.sceneClass = sceneClass;
   }
 
+  /** Owning app, via the scene this post pipeline belongs to. */
+  private get app(): SanweiApp {
+    const app = this.sceneClass.app;
+    if (!app) throw new Error("Post requires its scene to be registered with a SanweiApp before init()");
+    return app;
+  }
+
   async init() {
-    this.composer = new EffectComposer(RendererManager.renderer);
+    this.composer = new EffectComposer(this.app.renderer);
 
     for (const [passType, config] of Object.entries(this.passConfig)) {
       await this.initPass(passType, config);
@@ -70,10 +75,10 @@ export class Post implements IPost {
     let pass: any;
 
     if (passType === PassType.RENDER) {
-      pass = new RenderPass(this.sceneClass.scene, CameraManager.getActiveCamera());
+      pass = new RenderPass(this.sceneClass.scene, this.app.cameras.getActiveCamera());
     } else if (passType === PassType.BLOOM) {
       pass = new UnrealBloomPass(
-        GlobalUniforms.uScreen.value,
+        this.app.uniforms.uScreen.value as THREE.Vector2,
         config.uniforms.strength.value,
         config.uniforms.radius.value,
         config.uniforms.threshold.value
@@ -131,8 +136,8 @@ export class Post implements IPost {
   }
 
   resize() {
-    const { x, y } = GlobalUniforms.uScreen.value;
-    const pixelRatio = GlobalUniforms.uPixelRatio.value;
+    const { x, y } = this.app.uniforms.uScreen.value;
+    const pixelRatio = this.app.uniforms.uPixelRatio.value;
     this.composer.setSize(x / pixelRatio, y / pixelRatio);
 
     for (const pass of Object.values(this.passes)) {
@@ -146,7 +151,7 @@ export class Post implements IPost {
    * Used by TransitionController to capture scene output.
    */
   renderToTarget(target: THREE.WebGLRenderTarget) {
-    const activeCamera = CameraManager.getActiveCamera();
+    const activeCamera = this.app.cameras.getActiveCamera();
 
     this.passes[PassType.RENDER].scene = this.sceneClass.scene;
 
@@ -173,15 +178,15 @@ export class Post implements IPost {
       this.composer.writeBuffer = origRT1;
       this.composer.readBuffer = origRT2;
     } else {
-      RendererManager.renderer.setRenderTarget(target);
-      RendererManager.render(this.sceneClass.scene, activeCamera);
-      RendererManager.renderer.setRenderTarget(null);
+      this.app.renderer.setRenderTarget(target);
+      this.app.render(this.sceneClass.scene, activeCamera);
+      this.app.renderer.setRenderTarget(null);
     }
   }
 
   /** Render the post-processing pipeline to the screen. */
   update() {
-    const activeCamera = CameraManager.getActiveCamera();
+    const activeCamera = this.app.cameras.getActiveCamera();
 
     this.passes[PassType.RENDER].scene = this.sceneClass.scene;
 
@@ -190,7 +195,7 @@ export class Post implements IPost {
       this.updatePassUniforms();
       this.composer.render(RAF.delta);
     } else {
-      RendererManager.render(this.sceneClass.scene, activeCamera);
+      this.app.render(this.sceneClass.scene, activeCamera);
     }
   }
 

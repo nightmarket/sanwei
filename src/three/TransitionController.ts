@@ -1,6 +1,4 @@
-import { CameraManager } from "../core/CameraManager";
-import { GlobalUniforms } from "../core/globalUniformsAdapter";
-import { RendererManager } from "../core/RendererManager";
+import type { SanweiApp } from "../core/SanweiApp";
 import type { IScene } from "../core/types";
 import { THREE } from "../three-adapter";
 import { renderToTarget } from "../util/renderer";
@@ -31,8 +29,10 @@ export class TransitionController {
   progress = 0;
   isActive = false;
 
+  constructor(private app: SanweiApp) {}
+
   init() {
-    const { x: w, y: h } = GlobalUniforms.uScreen.value;
+    const { x: w, y: h } = this.app.uniforms.uScreen.value;
 
     this.rtFrom = new THREE.WebGLRenderTarget(w, h);
     this.rtTo = new THREE.WebGLRenderTarget(w, h);
@@ -96,8 +96,8 @@ export class TransitionController {
     if (scene.post) {
       scene.post.renderToTarget(target);
     } else {
-      renderToTarget(RendererManager.renderer, target, () => {
-        RendererManager.render(scene.scene, CameraManager.getActiveCamera());
+      renderToTarget(this.app.renderer, target, () => {
+        this.app.render(scene.scene, this.app.cameras.getActiveCamera());
       });
     }
 
@@ -108,7 +108,7 @@ export class TransitionController {
     this.material.uniforms.tScene2.value = this.rtTo.texture;
     this.material.uniforms.uProgress.value = this.progress;
 
-    RendererManager.render(this.transitionScene, this.transitionCamera);
+    this.app.render(this.transitionScene, this.transitionCamera);
   }
 
   /** Finalize the transition and clean up. */
@@ -120,7 +120,7 @@ export class TransitionController {
   }
 
   resize() {
-    const { x: w, y: h } = GlobalUniforms.uScreen.value;
+    const { x: w, y: h } = this.app.uniforms.uScreen.value;
     this.rtFrom?.setSize(w, h);
     this.rtTo?.setSize(w, h);
   }

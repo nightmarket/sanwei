@@ -1,9 +1,9 @@
 import { THREE } from "../three-adapter";
 import { isDebugEnabled, SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from "./constants";
 import type { DebugContext } from "./debugHelpers";
-import { GlobalUniforms } from "./globalUniformsAdapter";
+import type { AppUniformsShape } from "./globalUniformsAdapter";
 
-const RendererManagerUniforms = {
+const RENDERER_UNIFORM_DEFAULTS = {
   toneMappingExposure: {
     value: 0.3,
     min: 0,
@@ -52,8 +52,8 @@ export function getShadowMapTypes() {
   return _shadowMapTypes;
 }
 
-class RendererManagerClass {
-  isSingleton = true;
+/** Per-app renderer wrapper: owns the canvas/renderer pair, sizing, and renderer debug bindings. */
+export class RendererManager {
   canvas: HTMLCanvasElement | null = null;
   renderer: any = null;
   /**
@@ -62,7 +62,14 @@ class RendererManagerClass {
    */
   exposureUniform: { value: number } | null = null;
 
-  async init({ canvas, renderer }: { canvas: HTMLCanvasElement; renderer: any }) {
+  private settings = structuredClone(RENDERER_UNIFORM_DEFAULTS);
+
+  constructor(
+    private uniforms: AppUniformsShape,
+    private name = ""
+  ) {}
+
+  init({ canvas, renderer }: { canvas: HTMLCanvasElement; renderer: any }) {
     this.canvas = canvas;
     this.renderer = renderer;
 
@@ -70,39 +77,41 @@ class RendererManagerClass {
 
     if (isDebugEnabled()) {
       this.renderer.debug.checkShaderErrors = true;
-      this.renderer.debug.onShaderError = (gl, program, vs, fs) => console.error(gl, program, vs, fs);
+      this.renderer.debug.onShaderError = (gl: any, program: any, vs: any, fs: any) =>
+        console.error(gl, program, vs, fs);
     }
 
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    this.renderer.toneMapping = getToneMappingTypes()[RendererManagerUniforms.toneMapping.value];
-    this.renderer.toneMappingExposure = RendererManagerUniforms.toneMappingExposure.value;
-    this.renderer.shadowMap.type = getShadowMapTypes()[RendererManagerUniforms.shadowMapType.value];
-    this.renderer.shadowMap.enabled = RendererManagerUniforms.shadowMapEnabled.value;
+    this.renderer.toneMapping = getToneMappingTypes()[this.settings.toneMapping.value];
+    this.renderer.toneMappingExposure = this.settings.toneMappingExposure.value;
+    this.renderer.shadowMap.type = getShadowMapTypes()[this.settings.shadowMapType.value];
+    this.renderer.shadowMap.enabled = this.settings.shadowMapEnabled.value;
   }
 
   async initDebug({ debug, inspectorPane }: DebugContext) {
     if (!inspectorPane) return;
 
+    const title = this.name ? `🖼️ ${this.name} Renderer` : "🖼️ Renderer";
     const folder = inspectorPane.addFolder({
-      title: "🖼️ Renderer",
+      title,
       expanded: false,
     });
-    debug.register("RendererManager", folder);
+    debug.register(this.name ? `RendererManager:${this.name}` : "RendererManager", folder);
 
     folder
-      .addBinding(RendererManagerUniforms.toneMappingExposure, "value", {
+      .addBinding(this.settings.toneMappingExposure, "value", {
         label: "Tone Mapping Exposure",
-        min: RendererManagerUniforms.toneMappingExposure.min,
-        max: RendererManagerUniforms.toneMappingExposure.max,
-        step: RendererManagerUniforms.toneMappingExposure.step,
+        min: this.settings.toneMappingExposure.min,
+        max: this.settings.toneMappingExposure.max,
+        step: this.settings.toneMappingExposure.step,
       })
       .on("change", (ev: any) => {
         this.renderer.toneMappingExposure = ev.value;
         if (this.exposureUniform) this.exposureUniform.value = ev.value;
       });
 
-    const toneParams = { toneMapping: RendererManagerUniforms.toneMapping.value };
+    const toneParams = { toneMapping: this.settings.toneMapping.value };
     folder
       .addBinding(toneParams, "toneMapping", {
         label: "Tone Mapping",
@@ -112,7 +121,7 @@ class RendererManagerClass {
         this.renderer.toneMapping = getToneMappingTypes()[ev.value];
       });
 
-    const shadowParams = { shadowMapType: RendererManagerUniforms.shadowMapType.value };
+    const shadowParams = { shadowMapType: this.settings.shadowMapType.value };
     folder
       .addBinding(shadowParams, "shadowMapType", {
         label: "Shadow Map Type",
@@ -124,7 +133,7 @@ class RendererManagerClass {
       });
 
     folder
-      .addBinding(RendererManagerUniforms.shadowMapEnabled, "value", {
+      .addBinding(this.settings.shadowMapEnabled, "value", {
         label: "Shadow Map Enabled",
       })
       .on("change", (ev: any) => {
@@ -132,18 +141,18 @@ class RendererManagerClass {
       });
   }
 
-  resize() {
-    if (!this.canvas?.parentElement) return;
+  /** Returns false while the canvas parent has no area (e.g. a collapsed panel). */
+  resize(): boolean {
+    if (!this.canvas?.parentElement) return false;
 
     const width = this.canvas.parentElement.clientWidth;
     const height = this.canvas.parentElement.clientHeight;
+    if (width === 0 || height === 0) return false;
 
-    this.renderer.setPixelRatio(GlobalUniforms.uPixelRatio.value);
+    this.renderer.setPixelRatio(this.uniforms.uPixelRatio.value);
     this.renderer.setSize(width, height);
-    GlobalUniforms.uScreen.value.set(
-      width * GlobalUniforms.uPixelRatio.value,
-      height * GlobalUniforms.uPixelRatio.value
-    );
+    this.uniforms.uScreen.value.set(width * this.uniforms.uPixelRatio.value, height * this.uniforms.uPixelRatio.value);
+    return true;
   }
 
   render(scene: any, camera: any) {
@@ -156,5 +165,3 @@ class RendererManagerClass {
     this.canvas = null;
   }
 }
-
-export const RendererManager = new RendererManagerClass();

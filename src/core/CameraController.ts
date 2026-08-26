@@ -1,6 +1,6 @@
 import type * as THREETypes from "three";
 import { THREE } from "../three-adapter";
-import { GlobalUniforms } from "./globalUniformsAdapter";
+import type { AppUniformsShape } from "./globalUniformsAdapter";
 
 type CameraType = "perspective" | "orthographic";
 
@@ -16,15 +16,14 @@ export type CameraConfig = {
 
 export class CameraController {
   camera: THREETypes.PerspectiveCamera | THREETypes.OrthographicCamera;
+  private uniforms: AppUniformsShape;
 
-  constructor({
-    type = "perspective",
-    fov = 120,
-    position,
-    near = 1,
-    far = 1000,
-    lookAt,
-  }: CameraConfig) {
+  constructor(
+    { type = "perspective", fov = 120, position, near = 1, far = 1000, lookAt }: CameraConfig,
+    uniforms: AppUniformsShape
+  ) {
+    this.uniforms = uniforms;
+
     if (!position) {
       position = new THREE.Vector3(0, 0, 0);
     }
@@ -48,8 +47,10 @@ export class CameraController {
     if (!this.camera) return;
 
     if ("aspect" in this.camera) {
-      this.camera.aspect =
-        GlobalUniforms.uScreen.value.x / GlobalUniforms.uScreen.value.y;
+      const { x, y } = this.uniforms.uScreen.value;
+      if (x > 0 && y > 0) {
+        this.camera.aspect = x / y;
+      }
     }
 
     this.camera.updateProjectionMatrix();

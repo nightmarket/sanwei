@@ -1,7 +1,6 @@
 import { THREE } from "../three-adapter";
 
 import { isDebugEnabled } from "./constants";
-import { RendererManager } from "./RendererManager";
 
 class AssetManagerClass {
   isSingleton = true;
@@ -24,7 +23,12 @@ class AssetManagerClass {
     };
   }
 
-  async loadModel(url: string, onProgress?: (progress: number) => void) {
+  /**
+   * Load a GLTF/GLB. Pass the renderer that will draw the model when it may
+   * contain KTX2 textures — compressed-texture support detection is
+   * renderer-specific (first caller wins for the shared loader instance).
+   */
+  async loadModel(url: string, options: { onProgress?: (progress: number) => void; renderer?: any } = {}) {
     if (!this.gltfLoader) {
       const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
       const { DRACOLoader } = await import("three/addons/loaders/DRACOLoader.js");
@@ -35,13 +39,13 @@ class AssetManagerClass {
 
       const ktx2Loader = new KTX2Loader(this.loadingManager);
       ktx2Loader.setTranscoderPath("./libs/basis/");
-      ktx2Loader.detectSupport(RendererManager.renderer);
+      if (options.renderer) ktx2Loader.detectSupport(options.renderer);
 
       this.gltfLoader = new GLTFLoader(this.loadingManager);
       this.gltfLoader.setDRACOLoader(dracoLoader);
       this.gltfLoader.setKTX2Loader(ktx2Loader);
     }
-    const gltf = await this.gltfLoader.loadAsync(url, onProgress);
+    const gltf = await this.gltfLoader.loadAsync(url, options.onProgress);
     return gltf;
   }
 
