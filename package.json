@@ -1,6 +1,6 @@
 {
   "name": "@nightmarket/sanwei",
-  "version": "0.3.0",
+  "version": "0.4.5",
   "description": "Three.js / WebGPU scene engine — managers, postprocessing, and debug tooling.",
   "keywords": [
     "three",
@@ -51,6 +51,7 @@
     },
     "./three": "./src/three/index.ts",
     "./three-webgpu": "./src/three-webgpu/index.ts",
+    "./physics": "./src/physics/index.ts",
     "./util/*": "./src/util/*.ts",
     "./extras/*": "./src/extras/*.js",
     "./package.json": "./package.json"

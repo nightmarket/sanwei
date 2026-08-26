@@ -1,9 +1,12 @@
 import type { Scene } from "three";
 import type { DebugContext } from "./debugHelpers";
+import type { SanweiApp } from "./SanweiApp";
 
 export interface IScene {
   scene: Scene;
   post?: IPost;
+  /** Owning app — assigned by `SceneManager.addScenes` before `init()` runs. */
+  app?: SanweiApp;
 
   init(): Promise<void>;
   initDebug?(context?: DebugContext): Promise<void>;

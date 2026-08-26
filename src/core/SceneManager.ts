@@ -1,9 +1,9 @@
 import type { DebugContext } from "./debugHelpers";
+import type { SanweiApp } from "./SanweiApp";
 import type { IScene, ITransitionController } from "./types";
 
-export class SceneManagerClass {
-  isSingleton = true;
-
+/** Per-app scene registry: active scene, render dispatch, and transitions. */
+export class SceneManager {
   scenes: IScene[] = [];
   sceneNames: string[] = [];
   activeSceneIndex = 0;
@@ -18,7 +18,7 @@ export class SceneManagerClass {
   private debugFolder: any = null;
   private sceneSelector: any = null;
 
-  async init() {}
+  constructor(private app: SanweiApp) {}
 
   /** Set the transition controller (WebGL or WebGPU variant). */
   setTransitionController(controller: ITransitionController) {
@@ -32,11 +32,12 @@ export class SceneManagerClass {
       return;
     }
 
+    const title = this.app.name ? `🎬 ${this.app.name} Scenes` : "🎬 Scene Manager";
     this.debugFolder = context.pane.addFolder({
-      title: "🎬 Scene Manager",
+      title,
       expanded: false,
     });
-    context.debug.register("SceneManager", this.debugFolder);
+    context.debug.register(this.app.name ? `SceneManager:${this.app.name}` : "SceneManager", this.debugFolder);
 
     this.updateSceneSelector();
 
@@ -83,6 +84,7 @@ export class SceneManagerClass {
     this.sceneNames = names || scenes.map((s, i) => (s as any).constructor?.name || `Scene ${i + 1}`);
 
     for (const scene of this.scenes) {
+      scene.app = this.app;
       await scene.init();
 
       if (this.debugContext && scene.initDebug) {
@@ -206,5 +208,3 @@ export class SceneManagerClass {
     this.debugContext = null;
   }
 }
-
-export const SceneManager = new SceneManagerClass();

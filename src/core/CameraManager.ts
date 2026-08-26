@@ -1,7 +1,7 @@
 import { THREE } from "../three-adapter";
 import { type CameraConfig, CameraController } from "./CameraController";
 import type { DebugContext } from "./debugHelpers";
-import { RendererManager } from "./RendererManager";
+import type { AppUniformsShape } from "./globalUniformsAdapter";
 
 type DebugOrbitControls = {
   enabled: boolean;
@@ -14,28 +14,35 @@ export const CAMERA_MANAGER_UNIFORMS = {
   enableOrbitControls: true,
 };
 
-export class CameraManagerClass {
-  isSingleton = true;
+type CameraManagerHost = {
+  name: string;
+  uniforms: AppUniformsShape;
+  renderer: any;
+};
+
+/** Per-app camera registry: named controllers plus an optional debug orbit camera. */
+export class CameraManager {
   controllers: Record<string, CameraController> = {};
   activeController: CameraController | null = null;
   orbitControls: DebugOrbitControls | null = null;
   debugCamera: any = null;
 
-  async init() {}
+  constructor(private host: CameraManagerHost) {}
 
   async initDebug({ debug, pane }: DebugContext) {
     this.debugCamera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.001, 1000);
     this.debugCamera.position.set(0, 0, 40);
 
-    this.orbitControls = await debug.createOrbitControls(this.debugCamera, RendererManager.renderer.domElement);
+    this.orbitControls = await debug.createOrbitControls(this.debugCamera, this.host.renderer.domElement);
     this.orbitControls.enableDamping = true;
     this.orbitControls.enabled = CAMERA_MANAGER_UNIFORMS.enableOrbitControls;
 
+    const title = this.host.name ? `🎥 ${this.host.name} Camera` : "🎥 Camera Manager";
     const cameraFolder = pane.addFolder({
-      title: "🎥 Camera Manager",
+      title,
       expanded: false,
     });
-    debug.register("CameraManager", cameraFolder);
+    debug.register(this.host.name ? `CameraManager:${this.host.name}` : "CameraManager", cameraFolder);
 
     cameraFolder.addBinding(CAMERA_MANAGER_UNIFORMS, "enableOrbitControls").on("change", (ev) => {
       if (this.orbitControls) {
@@ -93,7 +100,7 @@ export class CameraManagerClass {
   }
 
   addController(key: string, config: CameraConfig) {
-    const controller = new CameraController(config);
+    const controller = new CameraController(config, this.host.uniforms);
     this.controllers[key] = controller;
     this.activeController = controller;
   }
@@ -131,5 +138,3 @@ export class CameraManagerClass {
     this.debugCamera = null;
   }
 }
-
-export const CameraManager = new CameraManagerClass();

@@ -1,7 +1,6 @@
 import { mix, texture, uniform, uv } from "three/tsl";
 import * as THREE from "three/webgpu";
-import { GlobalUniforms } from "../core/globalUniformsAdapter";
-import { RendererManager } from "../core/RendererManager";
+import type { SanweiApp } from "../core/SanweiApp";
 import type { IScene } from "../core/types";
 import { renderToTarget } from "../util/renderer";
 
@@ -40,8 +39,10 @@ export class TransitionController {
 
   isActive = false;
 
+  constructor(private app: SanweiApp) {}
+
   init() {
-    const { x: w, y: h } = GlobalUniforms.uScreen.value;
+    const { x: w, y: h } = this.app.uniforms.uScreen.value;
 
     this.rtFrom = new THREE.RenderTarget(w, h, {
       minFilter: THREE.LinearFilter,
@@ -98,7 +99,7 @@ export class TransitionController {
   render() {
     if (!this.isActive || !this.fromScene || !this.toScene) return;
 
-    const renderer = RendererManager.renderer;
+    const renderer = this.app.renderer;
 
     // Ping-pong: alternate between rendering scenes each frame
     if (this.frameCounter % 2 === 0) {
@@ -123,7 +124,7 @@ export class TransitionController {
   }
 
   resize() {
-    const { x: w, y: h } = GlobalUniforms.uScreen.value;
+    const { x: w, y: h } = this.app.uniforms.uScreen.value;
     this.rtFrom?.setSize(w, h);
     this.rtTo?.setSize(w, h);
   }
