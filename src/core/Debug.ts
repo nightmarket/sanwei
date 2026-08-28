@@ -10,19 +10,32 @@ export type DebugInitOptions = {
 
 export type DebugSetupContext = {
   debug: DebugClass;
+  pane: Pane | null;
+  inspectorPane: Pane | null;
+  /** @deprecated use inspectorPane */
+  tunePane: Pane | null;
+  createPane: (options?: PaneOptions) => Pane;
+};
+
+export type DebugSetup = (context: {
+  debug: DebugClass;
   pane: Pane;
   inspectorPane: Pane;
   /** @deprecated use inspectorPane */
   tunePane: Pane;
   createPane: (options?: PaneOptions) => Pane;
-};
-
-export type DebugSetup = (context: DebugSetupContext) => void | (() => void);
+}) => void | (() => void);
 
 type SetupEntry = {
   callback: DebugSetup;
   cleanup?: () => void;
   mounted: boolean;
+};
+
+const DEFAULT_PANE: Pick<PaneOptions, "anchor" | "toggleKey" | "maxHeight"> = {
+  anchor: "top-left",
+  toggleKey: "`",
+  maxHeight: 500,
 };
 
 /** Development-only, app-agnostic debug host. */
@@ -40,6 +53,7 @@ export class DebugClass {
   private folders = new Map<string, any>();
   private queue = new Map<string, Array<(folder: any) => void>>();
   private setups = new Set<SetupEntry>();
+  private panes = new Set<Pane>();
   private initPromise: Promise<void> | null = null;
   private PaneClass: typeof import("@nightmarket/tiao/core").Pane | null = null;
   private perfApi: typeof import("@nightmarket/tiao/perf-pane") | null = null;
@@ -51,7 +65,7 @@ export class DebugClass {
   set renderer(value: any) {
     if (!isDebugEnabled()) return;
     this._renderer = value;
-    if (value && this.inspectorPane && !this.perf) {
+    if (value && this.PaneClass && !this.perf) {
       void this.attachPerf(value);
     }
   }
@@ -60,7 +74,7 @@ export class DebugClass {
     if (!isDebugEnabled()) return null;
     if (renderer) this.renderer = renderer;
 
-    if (!this.inspectorPane) {
+    if (!this.PaneClass) {
       if (!this.initPromise) {
         this.initPromise = this.doInit();
       }
@@ -71,7 +85,10 @@ export class DebugClass {
       }
     }
 
-    if (setup) this.setup(setup);
+    if (setup) {
+      this.ensureInspectorPane();
+      this.setup(setup);
+    }
     this.mountSetups();
     return this.createContext();
   }
@@ -82,18 +99,7 @@ export class DebugClass {
       import("@nightmarket/tiao/perf-pane"),
     ]);
 
-    const pane = new Pane({
-      id: "debugger-inspector",
-      title: "Inspector",
-      anchor: "top-left",
-      toggleKey: "`",
-      maxHeight: 500,
-    });
-    pane.element.classList.add(NO_RAYCAST_CLASS);
-
     this.PaneClass = Pane;
-    this.inspectorPane = pane;
-    this.pane = pane;
     this.perfApi = perfApi;
 
     if (this._renderer) {
@@ -106,7 +112,7 @@ export class DebugClass {
 
     const entry: SetupEntry = { callback, mounted: false };
     this.setups.add(entry);
-    if (this.inspectorPane) this.mountSetup(entry);
+    if (this.pane) this.mountSetup(entry);
 
     return () => {
       entry.cleanup?.();
@@ -124,13 +130,26 @@ export class DebugClass {
       throw new Error("[Debug] createPane() requires Debug.init() to resolve first");
     }
 
-    const pane = new this.PaneClass(options);
+    const pane = new this.PaneClass({ ...DEFAULT_PANE, ...options });
     pane.element.classList.add(NO_RAYCAST_CLASS);
+    this.panes.add(pane);
+    return pane;
+  }
+
+  private ensureInspectorPane() {
+    if (this.inspectorPane) return this.inspectorPane;
+
+    const pane = this.createPane({
+      id: "debugger-inspector",
+      title: "Inspector",
+    });
+    this.inspectorPane = pane;
+    this.pane = pane;
     return pane;
   }
 
   private createContext(): DebugSetupContext | null {
-    if (!this.pane || !this.inspectorPane) return null;
+    if (!this.PaneClass) return null;
     return {
       debug: this,
       pane: this.pane,
@@ -147,21 +166,29 @@ export class DebugClass {
   private mountSetup(entry: SetupEntry) {
     if (entry.mounted) return;
     const context = this.createContext();
-    if (!context) return;
+    if (!context?.pane || !context.inspectorPane) return;
 
     entry.mounted = true;
-    entry.cleanup = entry.callback(context) ?? undefined;
+    entry.cleanup =
+      entry.callback({
+        ...context,
+        pane: context.pane,
+        inspectorPane: context.inspectorPane,
+        tunePane: context.inspectorPane,
+      }) ?? undefined;
   }
 
   private async attachPerf(renderer: any) {
-    if (this.perf || !this.inspectorPane || !this.perfApi) return;
+    if (this.perf || !this.perfApi || !this.PaneClass) return;
 
     this.perf = this.perfApi.createPerfMonitor({ renderer });
-    const performanceFolder = this.inspectorPane.addFolder({
+    const pane = this.createPane({
+      id: "debugger-perf",
       title: "Performance",
-      expanded: true,
+      anchor: "top-right",
+      order: -1,
     });
-    this.perfApi.addPerfMonitors(performanceFolder, this.perf, { maxFps: 144 });
+    this.perfApi.addPerfMonitors(pane, this.perf, { maxFps: 144 });
   }
 
   register(name: string, folder: any) {
@@ -217,10 +244,8 @@ export class DebugClass {
     this.setups.clear();
     this.perf?.dispose();
 
-    if (this.pane && this.pane !== this.inspectorPane) {
-      this.pane.dispose();
-    }
-    this.inspectorPane?.dispose();
+    for (const pane of this.panes) pane.dispose();
+    this.panes.clear();
 
     this.pane = null;
     this.inspectorPane = null;

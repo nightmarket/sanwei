@@ -59,10 +59,11 @@ export class PhysicsBody {
   }
 
   /**
-   * Capture the collider with rotation/position zeroed (scale kept): the
-   * deduplicated vertex set plus the local AABB used as fallback. Assumes
-   * ancestors carry no transforms of their own — true for bodies added
-   * directly to a scene.
+   * Capture the collider with position, rotation, and the body's own scale
+   * zeroed: the deduplicated vertex set (child local transforms kept) plus
+   * the local AABB used as fallback. `updateWorldAABB()` reapplies the body's
+   * scale, rotation, and position each step. Assumes ancestors carry no
+   * transforms of their own — true for bodies added directly to a scene.
    */
   computeLocalBounds() {
     _box.current ??= new THREE.Box3();
@@ -71,9 +72,11 @@ export class PhysicsBody {
     const { object } = this;
     const prevPosition = object.position.clone();
     const prevQuaternion = object.quaternion.clone();
+    const prevScale = object.scale.clone();
 
     object.position.set(0, 0, 0);
     object.quaternion.identity();
+    object.scale.set(1, 1, 1);
     object.updateMatrixWorld(true);
 
     _box.current.setFromObject(object);
@@ -102,6 +105,7 @@ export class PhysicsBody {
 
     object.position.copy(prevPosition);
     object.quaternion.copy(prevQuaternion);
+    object.scale.copy(prevScale);
     object.updateMatrixWorld(true);
   }
 
@@ -116,6 +120,7 @@ export class PhysicsBody {
     const world = this.worldPoints;
     const { x: qx, y: qy, z: qz, w: qw } = this.object.quaternion;
     const { x: px, y: py, z: pz } = this.object.position;
+    const { x: sx, y: sy, z: sz } = this.object.scale;
 
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
@@ -125,9 +130,9 @@ export class PhysicsBody {
     let maxZ = Number.NEGATIVE_INFINITY;
 
     for (let i = 0; i < local.length; i += 3) {
-      const vx = local[i]!;
-      const vy = local[i + 1]!;
-      const vz = local[i + 2]!;
+      const vx = local[i]! * sx;
+      const vy = local[i + 1]! * sy;
+      const vz = local[i + 2]! * sz;
 
       // v' = q · v · q⁻¹, expanded (same math as Vector3.applyQuaternion).
       const tx = 2 * (qy * vz - qz * vy);
@@ -159,13 +164,20 @@ export class PhysicsBody {
     _center.current ??= new THREE.Vector3();
 
     const e = _mat.current.makeRotationFromQuaternion(this.object.quaternion).elements;
-    const { x: hx, y: hy, z: hz } = this.halfExtents;
+    const { x: sx, y: sy, z: sz } = this.object.scale;
+    const hx = this.halfExtents.x * sx;
+    const hy = this.halfExtents.y * sy;
+    const hz = this.halfExtents.z * sz;
 
     const wx = Math.abs(e[0]!) * hx + Math.abs(e[4]!) * hy + Math.abs(e[8]!) * hz;
     const wy = Math.abs(e[1]!) * hx + Math.abs(e[5]!) * hy + Math.abs(e[9]!) * hz;
     const wz = Math.abs(e[2]!) * hx + Math.abs(e[6]!) * hy + Math.abs(e[10]!) * hz;
 
-    const center = _center.current.copy(this.localCenter).applyQuaternion(this.object.quaternion).add(this.object.position);
+    const center = _center.current
+      .copy(this.localCenter)
+      .multiply(this.object.scale)
+      .applyQuaternion(this.object.quaternion)
+      .add(this.object.position);
 
     this.worldAABB.min.set(center.x - wx, center.y - wy, center.z - wz);
     this.worldAABB.max.set(center.x + wx, center.y + wy, center.z + wz);

@@ -1,10 +1,14 @@
 import type { DebugClass } from "./Debug";
 
-export type DebugContext = {
+/** Returned by `Debug.init()` before a per-app pane is bound. */
+export type DebugInitResult = {
   debug: DebugClass;
-  pane: NonNullable<DebugClass["pane"]>;
-  /** Performance + scene inspect controls (may be null if Debug failed to create it). */
+  pane: DebugClass["pane"];
   inspectorPane: DebugClass["inspectorPane"];
   /** @deprecated use inspectorPane */
   tunePane: DebugClass["inspectorPane"];
+};
+
+export type DebugContext = DebugInitResult & {
+  pane: NonNullable<DebugClass["pane"]>;
 };

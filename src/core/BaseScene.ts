@@ -31,13 +31,7 @@ export class BaseScene implements IScene {
     this.post = await this.createPost();
   }
 
-  async initDebug(context?: DebugContext) {
-    if (!context) return;
-
-    const { debug, pane } = context;
-    this.folder = pane.addFolder({ title: this.constructor.name });
-    debug.register(this.constructor.name, this.folder);
-  }
+  async initDebug(_context?: DebugContext) {}
 
   resize() {
     this.post?.resize();

@@ -92,9 +92,8 @@ export class RendererManager {
   async initDebug({ debug, inspectorPane }: DebugContext) {
     if (!inspectorPane) return;
 
-    const title = this.name ? `🖼️ ${this.name} Renderer` : "🖼️ Renderer";
     const folder = inspectorPane.addFolder({
-      title,
+      title: "🖼️ Renderer",
       expanded: false,
     });
     debug.register(this.name ? `RendererManager:${this.name}` : "RendererManager", folder);
