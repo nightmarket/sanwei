@@ -1,7 +1,7 @@
 import { Accelerometer } from "./Accelerometer";
 import { AssetManager } from "./AssetManager";
 import { CameraManager } from "./CameraManager";
-import type { DebugContext } from "./debugHelpers";
+import type { DebugContext, DebugInitResult } from "./debugHelpers";
 import { Device } from "./Device";
 import { type AppUniformsShape, createAppUniforms, GlobalUniforms } from "./globalUniformsAdapter";
 import { Input } from "./Input";
@@ -28,8 +28,6 @@ function ensureGlobals() {
       await AssetManager.init();
       Input.init();
 
-      // Single global ticker: window-level input easing and the shared clock
-      // advance once per frame regardless of how many apps are running.
       RAF.subscribe(GLOBAL_TICK_ID, () => {
         Mouse.update();
         GlobalUniforms.uTime.value += RAF.delta;
@@ -39,18 +37,31 @@ function ensureGlobals() {
   return globalsReady;
 }
 
+export type TickDesire = "stopped" | "running";
+export type RectMode = "static" | "live";
+
 export type SanweiAppOptions = {
-  /** Unique per canvas — used as the RAF subscription id and debug folder prefix. */
+  /** Unique per canvas — used as the RAF subscription id and debug pane title. */
   name: string;
   canvas: HTMLCanvasElement;
   /** A constructed (and, for WebGPU, initialized) renderer. */
   renderer: any;
   /** Optional frame-rate cap for this app's update loop. */
   fps?: number | null;
-  /** Creates (or returns) the shared debug context. Only pass from one app unless you want per-app debug folders. */
-  initDebug?: () => Promise<DebugContext | null>;
-  /** Reuse an existing debug context (e.g. the one the main app created). */
-  debugContext?: DebugContext | null;
+  /** Creates (or returns) the shared debug host. Scene panes are created per app. */
+  initDebug?: () => Promise<DebugInitResult | null>;
+  /** Reuse an existing debug host (e.g. the one the main app created). */
+  debugContext?: DebugInitResult | null;
+  /**
+   * When true, unsubscribe from RAF while the canvas is offscreen or the tab is hidden.
+   * Explicit `stop()` still wins. Default false.
+   */
+  pauseWhenHidden?: boolean;
+  /**
+   * `live` reads the canvas rect every frame. `static` caches it and refreshes on
+   * resize/scroll. Default `live`.
+   */
+  rectMode?: RectMode;
 };
 
 /** Canvas-local pointer state derived from the window-level `Mouse` singleton. */
@@ -66,7 +77,9 @@ export type AppPointer = {
  * cameras, per-canvas uniforms, sizing, and a canvas-local pointer.
  *
  * Create via {@link createSanweiApp}. Multiple apps share one RAF loop and the
- * global singletons (Device, Mouse, AssetManager, Input).
+ * global singletons (Device, Mouse, AssetManager, Input). Optional
+ * `pauseWhenHidden` gates the RAF subscription; `rectMode: "static"` caches the
+ * pointer rect instead of reading it every frame.
  */
 export class SanweiApp {
   readonly name: string;
@@ -82,12 +95,19 @@ export class SanweiApp {
   debugContext: DebugContext | null = null;
 
   private fps: number | null;
-  private initDebugFn?: () => Promise<DebugContext | null>;
-  private sharedDebugContext: DebugContext | null = null;
+  private initDebugFn?: () => Promise<DebugInitResult | null>;
+  private sharedDebugContext: DebugInitResult | null = null;
   private ownsDebugContext = false;
-  private running = false;
+  private appPane: DebugContext["pane"] | null = null;
+  private desire: TickDesire = "stopped";
+  private ticking = false;
+  private pauseWhenHidden: boolean;
+  private rectMode: RectMode;
+  private isIntersecting = true;
   private hasSize = false;
   private resizeObserver: ResizeObserver | null = null;
+  private intersectionObserver: IntersectionObserver | null = null;
+  private cachedRect: DOMRect | null = null;
   private readyResolve!: () => void;
 
   constructor(options: SanweiAppOptions) {
@@ -96,6 +116,8 @@ export class SanweiApp {
     this.fps = options.fps ?? null;
     this.initDebugFn = options.initDebug;
     this.sharedDebugContext = options.debugContext ?? null;
+    this.pauseWhenHidden = options.pauseWhenHidden ?? false;
+    this.rectMode = options.rectMode ?? "live";
 
     this.uniforms = createAppUniforms();
     this.rendererManager = new RendererManager(this.uniforms, this.name);
@@ -118,9 +140,9 @@ export class SanweiApp {
     this.rendererManager.render(scene, camera);
   }
 
-  /** True between `start()` and `stop()`. */
+  /** True between `start()` and `stop()`. Independent of visibility gating. */
   get isRunning() {
-    return this.running;
+    return this.desire === "running";
   }
 
   async init() {
@@ -129,13 +151,12 @@ export class SanweiApp {
     this.uniforms.uPixelRatio.value = Device.pixelRatio;
     this.rendererManager.init({ canvas: this.canvas, renderer: this.rendererManager.renderer });
 
-    const debugContext = this.sharedDebugContext ?? ((await this.initDebugFn?.()) || null);
-    if (debugContext) {
-      this.debugContext = debugContext;
-      this.ownsDebugContext = !this.sharedDebugContext;
-      await this.rendererManager.initDebug(debugContext);
-      await this.scenes.initDebug(debugContext);
-      await this.cameras.initDebug(debugContext);
+    const shared = this.sharedDebugContext ?? ((await this.initDebugFn?.()) || null);
+    if (shared) {
+      this.debugContext = this.bindDebugPane(shared);
+      await this.rendererManager.initDebug(this.debugContext);
+      await this.scenes.initDebug(this.debugContext);
+      await this.cameras.initDebug(this.debugContext);
     }
 
     this.handleResize();
@@ -143,6 +164,9 @@ export class SanweiApp {
       this.resizeObserver = new ResizeObserver(this.handleResize);
       this.resizeObserver.observe(this.canvas.parentElement);
     }
+    this.attachVisibility();
+    this.attachRectListeners();
+    this.refreshRect();
 
     this.readyResolve();
   }
@@ -173,16 +197,14 @@ export class SanweiApp {
 
   /** Subscribe this app's update loop to the shared RAF. */
   start() {
-    if (this.running) return;
-    this.running = true;
-    RAF.subscribe(this.name, this.update, this.fps);
+    this.desire = "running";
+    this.syncTick();
   }
 
   /** Unsubscribe from the shared RAF. The last frame stays on the canvas. */
   stop() {
-    if (!this.running) return;
-    this.running = false;
-    RAF.unsubscribe(this.name);
+    this.desire = "stopped";
+    this.syncTick();
   }
 
   update = () => {
@@ -194,9 +216,54 @@ export class SanweiApp {
 
   handleResize = () => {
     this.hasSize = this.rendererManager.resize();
+    this.refreshRect();
     if (!this.hasSize) return;
     this.scenes.resize();
     this.cameras.resize();
+  };
+
+  private syncTick() {
+    const shouldTick = this.desire === "running" && this.isVisible();
+    if (shouldTick === this.ticking) return;
+    if (shouldTick) {
+      RAF.subscribe(this.name, this.update, this.fps);
+    } else {
+      RAF.unsubscribe(this.name);
+    }
+    this.ticking = shouldTick;
+  }
+
+  private isVisible() {
+    if (!this.pauseWhenHidden) return true;
+    return this.isIntersecting && !document.hidden;
+  }
+
+  private attachVisibility() {
+    if (!this.pauseWhenHidden) return;
+    this.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        this.isIntersecting = entries.some((entry) => entry.isIntersecting);
+        this.syncTick();
+      },
+      { threshold: 0 }
+    );
+    this.intersectionObserver.observe(this.canvas);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+  }
+
+  private onVisibilityChange = () => {
+    this.syncTick();
+  };
+
+  private attachRectListeners() {
+    if (this.rectMode !== "static") return;
+    window.addEventListener("scroll", this.refreshRect, { capture: true, passive: true });
+    window.visualViewport?.addEventListener("resize", this.refreshRect);
+    window.visualViewport?.addEventListener("scroll", this.refreshRect);
+  }
+
+  private refreshRect = () => {
+    this.cachedRect = this.canvas.getBoundingClientRect();
   };
 
   /**
@@ -204,13 +271,12 @@ export class SanweiApp {
    * live rect so canvases inside animating layouts stay accurate.
    */
   private updatePointer() {
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
+    const rect = this.rectMode === "static" ? this.cachedRect : this.canvas.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) {
       this.pointer.isOver = false;
       return;
     }
 
-    // Mouse.position is window NDC — invert back to client px, then re-project.
     const clientX = ((Mouse.position.x + 1) / 2) * window.innerWidth;
     const clientY = ((1 - Mouse.position.y) / 2) * window.innerHeight;
 
@@ -224,14 +290,49 @@ export class SanweiApp {
     this.stop();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.intersectionObserver?.disconnect();
+    this.intersectionObserver = null;
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
+    if (this.rectMode === "static") {
+      window.removeEventListener("scroll", this.refreshRect, { capture: true });
+      window.visualViewport?.removeEventListener("resize", this.refreshRect);
+      window.visualViewport?.removeEventListener("scroll", this.refreshRect);
+    }
     this.scenes.destroy();
     this.cameras.destroy();
     this.rendererManager.destroy();
     if (this.ownsDebugContext) {
       this.debugContext?.debug.dispose();
+    } else {
+      this.appPane?.dispose();
     }
+    this.appPane = null;
     this.debugContext = null;
   }
+
+  private bindDebugPane(shared: DebugInitResult): DebugContext {
+    this.ownsDebugContext = !this.sharedDebugContext;
+    const title = paneTitle(this.name);
+    const pane =
+      this.ownsDebugContext && shared.pane
+        ? shared.pane
+        : shared.debug.createPane({
+            id: `debugger-${this.name}`,
+            title,
+          });
+    pane.title = title;
+    this.appPane = pane;
+    return {
+      debug: shared.debug,
+      pane,
+      inspectorPane: pane,
+      tunePane: pane,
+    };
+  }
+}
+
+function paneTitle(name: string) {
+  return name ? name[0]!.toUpperCase() + name.slice(1) : name;
 }
 
 /** Create and fully initialize a {@link SanweiApp} for one canvas. */

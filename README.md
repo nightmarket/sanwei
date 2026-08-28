@@ -37,7 +37,9 @@ import { Input, RAF, UIEmitter } from "@nightmarket/sanwei";
 Debugging is enabled automatically when `NODE_ENV !== "production"` and disabled
 in production. App code should not branch on an environment variable.
 
-`Debug.init()` is agnostic: it creates one generalized **Inspector** pane with Performance monitors (FPS / CPU / GPU / draw calls). Apps add their own folders, bindings, or extra panes on top.
+`Debug.init()` is agnostic: it creates a **Performance** pane (FPS / CPU / GPU / draw calls)
+and lets each `SanweiApp` open its own scene pane. Apps add folders, bindings, or extra
+panes on top via `setup` / `createPane()`.
 
 The runtime facade is safe to import normally. The package export resolves to
 the full lazy runtime in development and a no-op module in production, so tiao

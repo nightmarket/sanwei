@@ -37,9 +37,8 @@ export class CameraManager {
     this.orbitControls.enableDamping = true;
     this.orbitControls.enabled = CAMERA_MANAGER_UNIFORMS.enableOrbitControls;
 
-    const title = this.host.name ? `🎥 ${this.host.name} Camera` : "🎥 Camera Manager";
     const cameraFolder = pane.addFolder({
-      title,
+      title: "🎥 Camera",
       expanded: false,
     });
     debug.register(this.host.name ? `CameraManager:${this.host.name}` : "CameraManager", cameraFolder);
