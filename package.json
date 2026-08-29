@@ -52,12 +52,16 @@
     "./three": "./src/three/index.ts",
     "./three-webgpu": "./src/three-webgpu/index.ts",
     "./physics": "./src/physics/index.ts",
+    "./plugins/environment": "./src/plugins/environment.ts",
+    "./plugins/ai/navigation": "./src/plugins/ai/NavigationPlugin.ts",
+    "./plugins/*": "./src/plugins/*/index.ts",
     "./util/*": "./src/util/*.ts",
     "./extras/*": "./src/extras/*.js",
     "./package.json": "./package.json"
   },
   "scripts": {
     "check-types": "tsc --noEmit",
+    "example": "pnpm --dir examples/playground dev",
     "prepublishOnly": "pnpm run check-types",
     "publish:package": "pnpm run check-types && pnpm publish --access public"
   },
@@ -68,6 +72,8 @@
   },
   "peerDependencies": {
     "@dimforge/rapier3d": "^0.14.0",
+    "@recast-navigation/core": ">=0.35.0",
+    "@recast-navigation/three": ">=0.35.0",
     "@nightmarket/tiao": ">=0.7.0",
     "glsl-noise": "^0.0.0",
     "glsl-rotate": "^2.0.1",
@@ -79,6 +85,12 @@
   },
   "peerDependenciesMeta": {
     "@dimforge/rapier3d": {
+      "optional": true
+    },
+    "@recast-navigation/core": {
+      "optional": true
+    },
+    "@recast-navigation/three": {
       "optional": true
     },
     "@nightmarket/tiao": {

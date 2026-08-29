@@ -2,6 +2,21 @@ import type { Scene } from "three";
 import type { DebugContext } from "./debugHelpers";
 import type { SanweiApp } from "./SanweiApp";
 
+export interface ISanweiPlugin {
+  readonly name: string;
+  /** Other plugin names that must be installed first. */
+  dependencies?: string[];
+  install(app: SanweiApp): void | Promise<void>;
+  initDebug?(context: DebugContext): void | Promise<void>;
+  dispose?(): void;
+}
+
+export type SanweiPluginCtor<T extends ISanweiPlugin = ISanweiPlugin> = new (
+  ...args: any[]
+) => T;
+export type SanweiPluginInput = ISanweiPlugin | SanweiPluginCtor;
+export type SanweiPluginId<T extends ISanweiPlugin = ISanweiPlugin> = string | SanweiPluginCtor<T>;
+
 export interface IScene {
   scene: Scene;
   post?: IPost;
