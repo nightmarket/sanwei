@@ -40,14 +40,18 @@ function requestSharedDevice(): Promise<GPUDevice | null> {
 }
 
 async function createFallbackRenderer(options: CreateWebGPURendererOptions) {
-  const renderer = new THREE.WebGPURenderer({
-    canvas: options.canvas,
-    antialias: options.antialias,
-    alpha: options.alpha,
-    forceWebGL: true,
-  });
-  await renderer.init();
-  return renderer;
+  try {
+    const renderer = new THREE.WebGPURenderer({
+      canvas: options.canvas,
+      antialias: options.antialias,
+      alpha: options.alpha,
+      forceWebGL: true,
+    });
+    await renderer.init();
+    return renderer;
+  } catch (error) {
+    throw new Error("No WebGPU or WebGL2 context is available in this browser.", { cause: error });
+  }
 }
 
 export function hasGpuRendererSupport() {

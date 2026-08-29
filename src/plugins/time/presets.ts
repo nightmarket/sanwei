@@ -1,0 +1,63 @@
+import { Color } from "three";
+
+export const DAY_PRESETS = {
+  day: {
+    revealColor: new Color("#5f7dff"),
+    revealIntensity: 12,
+    electricField: 0,
+    temperature: 5,
+    lightColor: new Color("#ffd2c2"),
+    lightIntensity: 1.2,
+    shadowColor: new Color("#6d3fff"),
+    fogColorA: new Color("#00ffff"),
+    fogColorB: new Color("#9b89ff"),
+    fogNearRatio: 0.315,
+    fogFarRatio: 1.25,
+  },
+  dusk: {
+    revealColor: new Color("#ff86d9"),
+    revealIntensity: 5.55,
+    electricField: 0.25,
+    temperature: 0,
+    lightColor: new Color("#ff8181"),
+    lightIntensity: 1.2,
+    shadowColor: new Color("#4e009c"),
+    fogColorA: new Color("#3e53ff"),
+    fogColorB: new Color("#ff4ce4"),
+    fogNearRatio: 0,
+    fogFarRatio: 1.25,
+  },
+  night: {
+    revealColor: new Color("#b678ff"),
+    revealIntensity: 10,
+    electricField: 1,
+    temperature: -7.5,
+    lightColor: new Color("#3240ff"),
+    lightIntensity: 3.8,
+    shadowColor: new Color("#2f00db"),
+    fogColorA: new Color("#10266f"),
+    fogColorB: new Color("#490a42"),
+    fogNearRatio: -0.85,
+    fogFarRatio: 1,
+  },
+  dawn: {
+    revealColor: new Color("#ff9d9d"),
+    revealIntensity: 4.85,
+    electricField: 0.25,
+    temperature: 0,
+    lightColor: new Color("#ffa882"),
+    lightIntensity: 1.2,
+    shadowColor: new Color("#db004f"),
+    fogColorA: new Color("#f885ff"),
+    fogColorB: new Color("#ff7d24"),
+    fogNearRatio: 0.3,
+    fogFarRatio: 1.25,
+  },
+};
+
+export const YEAR_PRESETS = {
+  winter: { leaves: 0.25, temperature: 5, humidity: 0.8, clouds: 0.65, wind: 0.3 },
+  spring: { leaves: 0, temperature: 15, humidity: 0.65, clouds: 0.45, wind: 0.2 },
+  summer: { leaves: 0.25, temperature: 25, humidity: 0.5, clouds: 0.3, wind: 0.1 },
+  fall: { leaves: 1, temperature: 15, humidity: 0.65, clouds: 0.65, wind: 0.25 },
+};

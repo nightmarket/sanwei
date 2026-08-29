@@ -10,5 +10,9 @@
 // Modules that do not depend on a THREE binding.
 export * from "./core/constants";
 export { Input } from "./core/Input";
+export { PluginManager } from "./core/PluginManager";
 export { RAF } from "./core/RAF";
+export { TICK_ORDER } from "./core/tick";
+export { Ticker } from "./core/Ticker";
+export type { ISanweiPlugin, SanweiPluginCtor, SanweiPluginId, SanweiPluginInput } from "./core/types";
 export { UIEmitter } from "./core/UIEmitter";
