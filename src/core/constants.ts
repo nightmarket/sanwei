@@ -23,6 +23,8 @@ export const SHADOW_MAP_TYPES = {
   PCFSoft: "PCFSoft",
 };
 
+export { TICK_ORDER } from "./tick";
+
 export const PassType = {
   RENDER: "render",
   TRANSITION: "transition",

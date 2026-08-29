@@ -6,9 +6,13 @@ import { Device } from "./Device";
 import { type AppUniformsShape, createAppUniforms, GlobalUniforms } from "./globalUniformsAdapter";
 import { Input } from "./Input";
 import { Mouse } from "./Mouse";
+import { PluginManager } from "./PluginManager";
 import { RAF } from "./RAF";
 import { RendererManager } from "./RendererManager";
 import { SceneManager } from "./SceneManager";
+import { TICK_ORDER } from "./tick";
+import { Ticker } from "./Ticker";
+import type { ISanweiPlugin, SanweiPluginId, SanweiPluginInput } from "./types";
 
 const GLOBAL_TICK_ID = "sanwei:globals";
 
@@ -88,6 +92,8 @@ export class SanweiApp {
   readonly rendererManager: RendererManager;
   readonly scenes: SceneManager;
   readonly cameras: CameraManager;
+  readonly ticker = new Ticker();
+  readonly plugins: PluginManager;
   readonly pointer: AppPointer = { ndc: { x: 0, y: 0 }, isOver: false };
   /** Resolves when the app is fully initialized (also returned by `createSanweiApp`). */
   ready: Promise<void>;
@@ -124,6 +130,10 @@ export class SanweiApp {
     this.rendererManager.renderer = options.renderer;
     this.scenes = new SceneManager(this);
     this.cameras = new CameraManager(this);
+    this.plugins = new PluginManager(this);
+    this.ticker.on(() => {
+      this.scenes.render();
+    }, TICK_ORDER.RENDER);
 
     this.ready = new Promise((resolve) => {
       this.readyResolve = resolve;
@@ -195,6 +205,15 @@ export class SanweiApp {
     return ret;
   };
 
+  async use(...inputs: SanweiPluginInput[]): Promise<this> {
+    await this.plugins.use(...inputs);
+    return this;
+  }
+
+  plugin<T extends ISanweiPlugin>(id: SanweiPluginId<T>): T {
+    return this.plugins.require(id);
+  }
+
   /** Subscribe this app's update loop to the shared RAF. */
   start() {
     this.desire = "running";
@@ -210,7 +229,7 @@ export class SanweiApp {
   update = () => {
     if (!this.hasSize) return;
     this.updatePointer();
-    this.scenes.render();
+    this.ticker.update(RAF.timeElapsed);
     this.cameras.update();
   };
 
@@ -298,6 +317,8 @@ export class SanweiApp {
       window.visualViewport?.removeEventListener("resize", this.refreshRect);
       window.visualViewport?.removeEventListener("scroll", this.refreshRect);
     }
+    this.plugins.dispose();
+    this.ticker.dispose();
     this.scenes.destroy();
     this.cameras.destroy();
     this.rendererManager.destroy();

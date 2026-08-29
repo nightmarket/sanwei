@@ -30,13 +30,24 @@ export type { AppUniformsShape } from "../core/globalUniformsAdapter";
 export { Input } from "../core/Input";
 export type { MouseDragState, MouseScrollState } from "../core/Mouse";
 export { Mouse, SCROLL_DIRECTION } from "../core/Mouse";
+export { PluginManager } from "../core/PluginManager";
 export { RAF } from "../core/RAF";
+export { TICK_ORDER } from "../core/tick";
+export { Ticker } from "../core/Ticker";
 export { RendererManager } from "../core/RendererManager";
 export type { AppPointer, SanweiAppOptions } from "../core/SanweiApp";
 export { createSanweiApp, SanweiApp } from "../core/SanweiApp";
 export { SceneManager } from "../core/SceneManager";
 export { Sound } from "../core/Sound";
-export type { IPost, IScene, ITransitionController } from "../core/types";
+export type {
+  IPost,
+  ISanweiPlugin,
+  IScene,
+  ITransitionController,
+  SanweiPluginCtor,
+  SanweiPluginId,
+  SanweiPluginInput,
+} from "../core/types";
 export { UIEmitter } from "../core/UIEmitter";
 export { renderToTarget as withRenderTarget } from "../util/renderer";
 // Three.js specific exports

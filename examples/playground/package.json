@@ -1,0 +1,20 @@
+{
+  "name": "sanwei-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@nightmarket/sanwei": "file:../..",
+    "three": "^0.178.0"
+  },
+  "optionalDependencies": {
+    "@dimforge/rapier3d": "^0.14.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vite": "^6.3.5"
+  }
+}
