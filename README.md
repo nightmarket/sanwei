@@ -16,14 +16,11 @@ npm install @nightmarket/tiao
 
 ## Usage
 
-Import from the renderer-specific entry point so `THREE` is bound correctly:
+Import from the renderer-specific entry point so `THREE` is bound correctly.
 
 ```ts
-// WebGL
-import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three";
-
-// WebGPU
-import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three-webgpu";
+import { createSanweiApp, THREE } from "@nightmarket/sanwei/three";
+import { createSanweiApp, THREE } from "@nightmarket/sanwei/three-webgpu";
 ```
 
 Core utilities that do not depend on a THREE binding:
@@ -82,6 +79,29 @@ const dispose = Debug.setup(({ pane }) => {
 | `@nightmarket/sanwei/debug-runtime` | Development-only Debug facade |
 | `@nightmarket/sanwei/util/*` | Utilities (`camera`, `viewport`, `bindings`, …) |
 | `@nightmarket/sanwei/extras/*` | Optional extras (`Physics`, `Synth`, `ScreenQuad`, …) |
+| `@nightmarket/sanwei/plugins/*` | Opt-in plugins (`time`, `weather`, `wind`, `sky`, `lighting`, `weather-fx`, `physics`, `ai`) |
+| `@nightmarket/sanwei/plugins/ai/navigation` | Recast navmesh crowd. Optional peer. |
+| `@nightmarket/sanwei/plugins/environment` | Convenience installer for the full environment stack |
+
+### Plugins (WebGPU)
+
+Install what a game needs. Lookup is by class or name. Visual plugins wait for a scene, so `use()` can run before `addScenes`.
+
+```ts
+import { createSanweiApp } from "@nightmarket/sanwei/three-webgpu";
+import { useEnvironment } from "@nightmarket/sanwei/plugins/environment";
+import { TimePlugin } from "@nightmarket/sanwei/plugins/time";
+
+const app = await createSanweiApp({ name: "main", canvas, renderer });
+await useEnvironment(app);
+await app.scenes.addScenes([scene]);
+app.plugin(TimePlugin).day.progress;
+app.start();
+```
+
+`WeatherPlugin` depends on `time`. Rapier and recast-navigation stay optional peers.
+
+A full loop lives in `examples/playground` (`pnpm example`). That folder is not part of the published package.
 
 This package ships TypeScript source and is meant to be consumed by a bundler (Vite, Next.js, etc.). GLTF Draco/Basis paths in `AssetManager` are relative to the app (`./libs/draco/`, `./libs/basis/`).
 
