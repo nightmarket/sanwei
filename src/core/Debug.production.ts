@@ -8,10 +8,6 @@ export class DebugClass {
   inspectorPane: Pane | null = null;
   perf = null;
 
-  get tunePane() {
-    return null;
-  }
-
   get renderer() {
     return null;
   }
@@ -40,18 +36,11 @@ export class DebugClass {
 
   flushWarnings() {}
 
-  addButton(
-    _target: unknown,
-    _options: { title?: string; label?: string; cb: () => void }
-  ) {}
-
   async createOrbitControls(_camera: unknown, _domElement: HTMLElement) {
     return null;
   }
 
   dispose() {}
-
-  update() {}
 }
 
 export const Debug = new DebugClass();

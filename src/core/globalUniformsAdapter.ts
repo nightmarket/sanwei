@@ -1,13 +1,12 @@
-// GlobalUniforms adapter — core modules work with both WebGL and WebGPU uniforms.
+// Backend uniforms — core modules work with both WebGL and WebGPU uniforms.
 // Bound by @nightmarket/sanwei/three or @nightmarket/sanwei/three-webgpu.
 //
-// Truly global uniforms (shared by every canvas) live here: uTime, uBackground.
-// Per-canvas uniforms (uScreen, uPixelRatio) live on each SanweiApp instance and
-// are created through the bound `createAppUniforms` factory.
+// Truly global uniforms (shared by every canvas) live on the backend's
+// `GlobalUniforms`. Per-canvas uniforms (uScreen, uPixelRatio) live on each
+// SanweiApp instance and are created through the bound factory.
 
 export interface GlobalUniformsShape {
   uTime: { value: number };
-  uBackground: { value: any };
 }
 
 /**
@@ -23,38 +22,23 @@ export interface AppUniformsShape {
   uPixelRatio: AppUniform<number>;
 }
 
-let _globalUniforms: GlobalUniformsShape | null = null;
-let _appUniformsFactory: (() => AppUniformsShape) | null = null;
+const UNBOUND_ERROR =
+  "No renderer backend bound. Import from '@nightmarket/sanwei/three' or '@nightmarket/sanwei/three-webgpu' before creating a SanweiApp.";
 
-export function bindGlobalUniforms(uniforms: GlobalUniformsShape) {
-  _globalUniforms = uniforms;
-}
+let globalUniforms: GlobalUniformsShape | null = null;
+let appUniformsFactory: (() => AppUniformsShape) | null = null;
 
-export function bindAppUniformsFactory(factory: () => AppUniformsShape) {
-  _appUniformsFactory = factory;
+export function bindUniforms(globals: GlobalUniformsShape, createApp: () => AppUniformsShape) {
+  globalUniforms = globals;
+  appUniformsFactory = createApp;
 }
 
 export function getGlobalUniforms(): GlobalUniformsShape {
-  if (!_globalUniforms) {
-    throw new Error(
-      "GlobalUniforms not initialized. Import from '@nightmarket/sanwei/three' or '@nightmarket/sanwei/three-webgpu'."
-    );
-  }
-  return _globalUniforms;
+  if (!globalUniforms) throw new Error(UNBOUND_ERROR);
+  return globalUniforms;
 }
 
 export function createAppUniforms(): AppUniformsShape {
-  if (!_appUniformsFactory) {
-    throw new Error(
-      "App uniforms factory not bound. Import from '@nightmarket/sanwei/three' or '@nightmarket/sanwei/three-webgpu'."
-    );
-  }
-  return _appUniformsFactory();
+  if (!appUniformsFactory) throw new Error(UNBOUND_ERROR);
+  return appUniformsFactory();
 }
-
-// Proxy so core modules can use GlobalUniforms at module scope before bind.
-export const GlobalUniforms = new Proxy({} as GlobalUniformsShape, {
-  get(_target, prop) {
-    return getGlobalUniforms()[prop as keyof GlobalUniformsShape];
-  },
-});

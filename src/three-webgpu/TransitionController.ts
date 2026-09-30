@@ -1,8 +1,30 @@
 import { mix, texture, uniform, uv } from "three/tsl";
-import * as THREE from "three/webgpu";
+import {
+  HalfFloatType,
+  LinearFilter,
+  Mesh,
+  MeshBasicNodeMaterial,
+  OrthographicCamera,
+  PlaneGeometry,
+  RenderTarget,
+  RGBAFormat,
+  Scene,
+  SRGBColorSpace,
+} from "three/webgpu";
 import type { SanweiApp } from "../core/SanweiApp";
 import type { IScene } from "../core/types";
 import { renderToTarget } from "../util/renderer";
+
+const createTarget = (width: number, height: number) => {
+  const target = new RenderTarget(width, height, {
+    minFilter: LinearFilter,
+    magFilter: LinearFilter,
+    format: RGBAFormat,
+    type: HalfFloatType,
+  });
+  target.texture.colorSpace = SRGBColorSpace;
+  return target;
+};
 
 /**
  * WebGPU-compatible transition controller.
@@ -17,12 +39,12 @@ import { renderToTarget } from "../util/renderer";
  *   }});
  */
 export class TransitionController {
-  private rtFrom!: THREE.RenderTarget;
-  private rtTo!: THREE.RenderTarget;
-  private transitionScene!: THREE.Scene;
-  private transitionCamera!: THREE.OrthographicCamera;
-  private material!: THREE.MeshBasicNodeMaterial;
-  private quadGeometry!: THREE.PlaneGeometry;
+  private rtFrom!: RenderTarget;
+  private rtTo!: RenderTarget;
+  private transitionScene!: Scene;
+  private transitionCamera!: OrthographicCamera;
+  private material!: MeshBasicNodeMaterial;
+  private quadGeometry!: PlaneGeometry;
   private progressUniform = uniform(0);
 
   private fromScene: IScene | null = null;
@@ -43,43 +65,22 @@ export class TransitionController {
 
   init() {
     const { x: w, y: h } = this.app.uniforms.uScreen.value;
-
-    this.rtFrom = new THREE.RenderTarget(w, h, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-      type: THREE.HalfFloatType,
-    });
-    this.rtTo = new THREE.RenderTarget(w, h, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-      type: THREE.HalfFloatType,
-    });
-
-    this.rtFrom.texture.colorSpace = THREE.SRGBColorSpace;
-    this.rtTo.texture.colorSpace = THREE.SRGBColorSpace;
+    this.rtFrom = createTarget(w, h);
+    this.rtTo = createTarget(w, h);
 
     // WebGPU render targets use top-left origin; uv().flipY() matches Three.js convention (see WebGPUTextureUtils).
     const uvFlipped = uv().flipY();
-
-    // TSL crossfade: mix(fromTexture, toTexture, progress)
     const fromTex = texture(this.rtFrom.texture, uvFlipped);
     const toTex = texture(this.rtTo.texture, uvFlipped);
 
-    this.material = new THREE.MeshBasicNodeMaterial({
-      transparent: true,
-    });
-
+    this.material = new MeshBasicNodeMaterial({ transparent: true });
     this.material.colorNode = mix(fromTex, toTex, this.progressUniform);
     this.material.opacityNode = mix(fromTex.a, toTex.a, this.progressUniform);
 
-    this.quadGeometry = new THREE.PlaneGeometry(2, 2);
-    const quad = new THREE.Mesh(this.quadGeometry, this.material);
-
-    this.transitionScene = new THREE.Scene();
-    this.transitionScene.add(quad);
-    this.transitionCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.quadGeometry = new PlaneGeometry(2, 2);
+    this.transitionScene = new Scene();
+    this.transitionScene.add(new Mesh(this.quadGeometry, this.material));
+    this.transitionCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   }
 
   /** Begin a transition between two scenes. */
@@ -91,27 +92,27 @@ export class TransitionController {
     this.frameCounter = 0;
 
     // Both scenes must be visible during the transition
-    if (fromScene.scene) fromScene.scene.visible = true;
-    if (toScene.scene) toScene.scene.visible = true;
+    fromScene.scene.visible = true;
+    toScene.scene.visible = true;
   }
 
   /** Called each frame by SceneManager while a transition is active. */
   render() {
-    if (!this.isActive || !this.fromScene || !this.toScene) return;
+    const { fromScene, toScene } = this;
+    if (!this.isActive || !fromScene || !toScene) return;
 
     const renderer = this.app.renderer;
 
     // Ping-pong: alternate between rendering scenes each frame
     if (this.frameCounter % 2 === 0) {
-      renderToTarget(renderer, this.rtFrom, () => this.fromScene!.render());
+      renderToTarget(renderer, this.rtFrom, () => fromScene.render());
     } else {
-      renderToTarget(renderer, this.rtTo, () => this.toScene!.render());
+      renderToTarget(renderer, this.rtTo, () => toScene.render());
     }
 
     this.frameCounter++;
 
     // Composite to screen
-    renderer.setRenderTarget(null);
     renderer.render(this.transitionScene, this.transitionCamera);
   }
 

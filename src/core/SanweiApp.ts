@@ -1,9 +1,9 @@
 import { Accelerometer } from "./Accelerometer";
 import { AssetManager } from "./AssetManager";
 import { CameraManager } from "./CameraManager";
-import type { DebugContext, DebugInitResult } from "./debugHelpers";
 import { Device } from "./Device";
-import { type AppUniformsShape, createAppUniforms, GlobalUniforms } from "./globalUniformsAdapter";
+import type { DebugContext, DebugInitResult } from "./debugHelpers";
+import { type AppUniformsShape, createAppUniforms, getGlobalUniforms } from "./globalUniformsAdapter";
 import { Input } from "./Input";
 import { Mouse } from "./Mouse";
 import { RAF } from "./RAF";
@@ -13,28 +13,36 @@ import { SceneManager } from "./SceneManager";
 const GLOBAL_TICK_ID = "sanwei:globals";
 
 let globalsReady: Promise<void> | null = null;
+let tickingApps = 0;
 
 /**
  * One-time process-wide setup shared by every app: the RAF loop, device/GPU
  * detection, window-level input, and the asset cache. Idempotent.
  */
 function ensureGlobals() {
-  if (!globalsReady) {
-    globalsReady = (async () => {
-      RAF.init();
-      await Device.init();
-      Accelerometer.init();
-      Mouse.init();
-      await AssetManager.init();
-      Input.init();
-
-      RAF.subscribe(GLOBAL_TICK_ID, () => {
-        Mouse.update();
-        GlobalUniforms.uTime.value += RAF.delta;
-      });
-    })();
-  }
+  globalsReady ??= (async () => {
+    RAF.init();
+    await Device.init();
+    Accelerometer.init();
+    Mouse.init();
+    AssetManager.init();
+    Input.init();
+  })();
   return globalsReady;
+}
+
+function tickGlobals() {
+  Mouse.update();
+  getGlobalUniforms().uTime.value += RAF.delta;
+}
+
+/** Shared per-frame work runs only while some app ticks, so an idle page schedules no frames. */
+function retainGlobalTick() {
+  if (tickingApps++ === 0) RAF.subscribe(GLOBAL_TICK_ID, tickGlobals);
+}
+
+function releaseGlobalTick() {
+  if (--tickingApps === 0) RAF.unsubscribe(GLOBAL_TICK_ID);
 }
 
 export type TickDesire = "stopped" | "running";
@@ -148,6 +156,10 @@ export class SanweiApp {
   async init() {
     await ensureGlobals();
 
+    // WebGPURenderer.init() starts a private rAF that advances TSL's frame clock;
+    // `syncTick` runs it only while this app ticks.
+    this.renderer._animation?.stop();
+
     this.uniforms.uPixelRatio.value = Device.pixelRatio;
     this.rendererManager.init({ canvas: this.canvas, renderer: this.rendererManager.renderer });
 
@@ -225,12 +237,16 @@ export class SanweiApp {
   private syncTick() {
     const shouldTick = this.desire === "running" && this.isVisible();
     if (shouldTick === this.ticking) return;
+    this.ticking = shouldTick;
     if (shouldTick) {
+      retainGlobalTick();
       RAF.subscribe(this.name, this.update, this.fps);
+      this.renderer._animation?.start();
     } else {
       RAF.unsubscribe(this.name);
+      releaseGlobalTick();
+      this.renderer._animation?.stop();
     }
-    this.ticking = shouldTick;
   }
 
   private isVisible() {
@@ -326,7 +342,6 @@ export class SanweiApp {
       debug: shared.debug,
       pane,
       inspectorPane: pane,
-      tunePane: pane,
     };
   }
 }

@@ -1,45 +1,18 @@
-// Bind THREE from standard three.js
-import * as THREE from "three";
-import { bindThree } from "../three-adapter";
-
-bindThree(THREE);
-THREE.Cache.enabled = true;
-
-// Bind GlobalUniforms + per-app uniform factory for core modules
-import { bindAppUniformsFactory, bindGlobalUniforms } from "../core/globalUniformsAdapter";
+import { bindUniforms } from "../core/globalUniformsAdapter";
 import { createAppUniforms, GlobalUniforms } from "./GlobalUniforms";
 
-bindGlobalUniforms(GlobalUniforms);
-bindAppUniformsFactory(createAppUniforms);
+bindUniforms(GlobalUniforms, createAppUniforms);
 
-// Re-export THREE for consumers
-export { THREE };
-
-// Core modules
-export { Accelerometer } from "../core/Accelerometer";
-export { AssetManager } from "../core/AssetManager";
-export type { CameraConfig } from "../core/CameraController";
-export { CameraController } from "../core/CameraController";
-export {
-  CAMERA_MANAGER_UNIFORMS,
-  CameraManager,
-} from "../core/CameraManager";
-export * from "../core/constants";
-export { Device } from "../core/Device";
 export type { AppUniformsShape } from "../core/globalUniformsAdapter";
-export { Input } from "../core/Input";
-export type { MouseDragState, MouseScrollState } from "../core/Mouse";
-export { Mouse, SCROLL_DIRECTION } from "../core/Mouse";
-export { RAF } from "../core/RAF";
-export { RendererManager } from "../core/RendererManager";
-export type { AppPointer, SanweiAppOptions } from "../core/SanweiApp";
-export { createSanweiApp, SanweiApp } from "../core/SanweiApp";
-export { SceneManager } from "../core/SceneManager";
-export { Sound } from "../core/Sound";
-export type { IPost, IScene, ITransitionController } from "../core/types";
-export { UIEmitter } from "../core/UIEmitter";
-export { renderToTarget as withRenderTarget } from "../util/renderer";
-// Three.js specific exports
+export {
+  type AppPointer,
+  createSanweiApp,
+  type RectMode,
+  SanweiApp,
+  type SanweiAppOptions,
+  type TickDesire,
+} from "../core/SanweiApp";
+export * from "../index";
 export { BaseThreeScene } from "./BaseThreeScene";
 export { createAppUniforms, GlobalUniforms } from "./GlobalUniforms";
 export { DEFAULT_PASS_CONFIG, Post } from "./ThreePost";

@@ -1,6 +1,5 @@
-import type * as THREETypes from "three";
+import { Box3Helper, type Scene } from "three";
 import type { DebugContext } from "../core/debugHelpers";
-import { THREE } from "../three-adapter";
 import type { PhysicsWorld } from "./PhysicsWorld";
 
 /**
@@ -13,7 +12,7 @@ import type { PhysicsWorld } from "./PhysicsWorld";
  */
 export function attachBoundsDebug(
   world: PhysicsWorld,
-  scene: THREETypes.Scene,
+  scene: Scene,
   { pane, debug }: DebugContext,
   { title = "🧊 Physics", color = 0x00ff88 }: { title?: string; color?: number } = {}
 ) {
@@ -21,7 +20,7 @@ export function attachBoundsDebug(
   debug.register(title, folder);
 
   const params = { showBounds: false };
-  let helpers: THREETypes.Box3Helper[] = [];
+  let helpers: Box3Helper[] = [];
 
   const removeHelpers = () => {
     for (const helper of helpers) {
@@ -34,7 +33,7 @@ export function attachBoundsDebug(
   const addHelpers = () => {
     removeHelpers();
     for (const body of world.bodies) {
-      const helper = new THREE.Box3Helper(body.worldAABB, color);
+      const helper = new Box3Helper(body.worldAABB, color);
       scene.add(helper);
       helpers.push(helper);
     }

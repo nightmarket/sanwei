@@ -1,4 +1,4 @@
-import { CopyShader } from "three/examples/jsm/shaders/CopyShader";
+import { CopyShader } from "three/addons/shaders/CopyShader.js";
 
 const fragmentShader = `
   precision highp float;

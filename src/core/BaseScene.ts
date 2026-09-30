@@ -1,4 +1,4 @@
-import { THREE } from "../three-adapter";
+import { type Material, type Mesh, Scene } from "three";
 import type { DebugContext } from "./debugHelpers";
 import type { SanweiApp } from "./SanweiApp";
 import type { IPost, IScene } from "./types";
@@ -10,15 +10,13 @@ import type { IPost, IScene } from "./types";
  * post-processing pipeline, or handle post-processing directly.
  */
 export class BaseScene implements IScene {
-  scene: any; // THREE.Scene
+  scene = new Scene();
   post?: IPost;
   sceneConfig: any;
-  folder: any;
   /** Owning app — assigned by `SceneManager.addScenes` before `init()` runs. */
   app!: SanweiApp;
 
   constructor(sceneConfig: any) {
-    this.scene = new THREE.Scene();
     this.sceneConfig = sceneConfig;
   }
 
@@ -44,16 +42,15 @@ export class BaseScene implements IScene {
   destroy() {
     this.post?.dispose();
 
-    this.scene.traverse((o: any) => {
-      if (!o.isMesh) return;
+    this.scene.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh) return;
 
-      o.geometry?.dispose();
+      mesh.geometry?.dispose();
 
-      const materials = Array.isArray(o.material) ? o.material : [o.material];
-
+      const materials: Material[] = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const material of materials) {
-        for (const key in material) {
-          const value = material[key];
+        for (const value of Object.values(material)) {
           if (value?.isTexture) value.dispose();
         }
         material.dispose();

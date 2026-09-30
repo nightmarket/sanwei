@@ -5,8 +5,6 @@ export type DebugInitResult = {
   debug: DebugClass;
   pane: DebugClass["pane"];
   inspectorPane: DebugClass["inspectorPane"];
-  /** @deprecated use inspectorPane */
-  tunePane: DebugClass["inspectorPane"];
 };
 
 export type DebugContext = DebugInitResult & {

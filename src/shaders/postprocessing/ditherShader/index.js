@@ -1,5 +1,5 @@
-import * as THREE from "three";
-import { CopyShader } from "three/examples/jsm/shaders/CopyShader";
+import { Vector2 } from "three";
+import { CopyShader } from "three/addons/shaders/CopyShader.js";
 
 const fragmentShader = `
   precision highp float;
@@ -86,7 +86,7 @@ export const DitherShader = {
   uniforms: {
     tDiffuse: { value: null },
     uPixelSize: { value: 4 },
-    uResolution: { value: new THREE.Vector2(1280, 720) },
+    uResolution: { value: new Vector2(1280, 720) },
   },
   vertexShader: CopyShader.vertexShader,
   fragmentShader,
