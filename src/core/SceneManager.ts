@@ -57,14 +57,7 @@ export class SceneManager {
 
     if (!this.debugFolder || this.sceneNames.length === 0) return;
 
-    const options = this.sceneNames.reduce(
-      (acc, name, index) => {
-        acc[name] = index;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
+    const options = Object.fromEntries(this.sceneNames.map((name, index) => [name, index]));
     const state = { scene: this.activeSceneIndex };
 
     this.sceneSelector = this.debugFolder.addBinding(state, "scene", {
@@ -80,7 +73,7 @@ export class SceneManager {
 
   async addScenes(scenes: IScene[], names?: string[]) {
     this.scenes = scenes;
-    this.sceneNames = names || scenes.map((s, i) => (s as any).constructor?.name || `Scene ${i + 1}`);
+    this.sceneNames = names || scenes.map((s, i) => s.constructor.name || `Scene ${i + 1}`);
 
     for (const scene of this.scenes) {
       scene.app = this.app;

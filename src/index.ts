@@ -1,14 +1,21 @@
-// For THREE-dependent modules, import from:
-// - "@nightmarket/sanwei/three" for standard Three.js (WebGL)
-// - "@nightmarket/sanwei/three-webgpu" for Three.js WebGPU
+// Renderer-agnostic runtime. Safe to import from DOM code: nothing here binds a
+// renderer backend, so it never pulls in `three/webgpu`.
 //
-// Those entry points bind THREE and re-export core utilities.
-//
-//   import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three";
-//   import { Manager, CameraManager, THREE } from "@nightmarket/sanwei/three-webgpu";
+// Apps and scenes import from a backend entry, which re-exports everything here:
+//   import { createSanweiApp } from "@nightmarket/sanwei/three";        // WebGL
+//   import { createSanweiApp } from "@nightmarket/sanwei/three-webgpu"; // WebGPU
 
-// Modules that do not depend on a THREE binding.
+export { Accelerometer } from "./core/Accelerometer";
+export { AssetManager, type LoadModelOptions } from "./core/AssetManager";
+export { type CameraConfig, CameraController } from "./core/CameraController";
+export { CAMERA_MANAGER_UNIFORMS, CameraManager } from "./core/CameraManager";
 export * from "./core/constants";
+export { Device, type GpuTier, type QualityPreset } from "./core/Device";
 export { Input } from "./core/Input";
+export { Mouse, type MouseDragState, type MouseScrollState, SCROLL_DIRECTION } from "./core/Mouse";
 export { RAF } from "./core/RAF";
-export { UIEmitter } from "./core/UIEmitter";
+export { RendererManager } from "./core/RendererManager";
+export { SceneManager } from "./core/SceneManager";
+export { Sound } from "./core/Sound";
+export type { IPost, IScene, ITransitionController } from "./core/types";
+export { renderToTarget as withRenderTarget } from "./util/renderer";

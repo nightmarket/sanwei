@@ -1,5 +1,4 @@
-import type { CanvasTexture } from "three";
-import { THREE } from "../three-adapter";
+import { CanvasTexture, NearestFilter } from "three";
 
 const DEFAULT_GLYPH_CHARS = " .:-=+*#%@";
 
@@ -16,13 +15,11 @@ export function createGlyphTexture(
   options: CreateGlyphTextureOptions = {}
 ): { texture: CanvasTexture; charCount: number } {
   const { charSize = 16 } = options;
-  const fontFamily = "monospace";
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
-    const placeholder = new THREE.CanvasTexture(document.createElement("canvas"));
-    return { texture: placeholder, charCount: 1 };
+    return { texture: new CanvasTexture(document.createElement("canvas")), charCount: 1 };
   }
 
   const chars = asciiChars.length > 0 ? asciiChars : DEFAULT_GLYPH_CHARS;
@@ -34,7 +31,7 @@ export function createGlyphTexture(
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = "white";
-  ctx.font = `${charSize}px ${fontFamily}`;
+  ctx.font = `${charSize}px monospace`;
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
 
@@ -42,9 +39,8 @@ export function createGlyphTexture(
     ctx.fillText(char, (i + 0.5) * charSize, charSize / 2);
   });
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.needsUpdate = true;
-  return { texture: tex, charCount };
+  const texture = new CanvasTexture(canvas);
+  texture.minFilter = NearestFilter;
+  texture.magFilter = NearestFilter;
+  return { texture, charCount };
 }

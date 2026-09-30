@@ -1,5 +1,5 @@
-import * as THREE from "three";
-import { CopyShader } from "three/examples/jsm/shaders/CopyShader";
+import { Vector2 } from "three";
+import { CopyShader } from "three/addons/shaders/CopyShader.js";
 export const KUWAHARA_SHADER_UNIFORMS = {
   uRadius: { value: 15, type: "i", label: "kernel size" },
   //   uDivisions: { value: 200, min: 0, max: 400, step: 20, label: "uDivisions" },
@@ -79,7 +79,7 @@ export const KuwaharaShader = {
   uniforms: {
     tDiffuse: { value: null },
     uRadius: { value: 15 },
-    uResolution: { value: new THREE.Vector2(1280, 720) },
+    uResolution: { value: new Vector2(1280, 720) },
   },
   vertexShader: CopyShader.vertexShader,
   fragmentShader,

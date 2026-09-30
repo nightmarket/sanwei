@@ -1,17 +1,16 @@
-import type * as THREETypes from "three";
-import { THREE } from "../three-adapter";
+import { type Box3, type Plane, Quaternion, Vector3 } from "three";
 import { PhysicsBody, type PhysicsBodyOptions } from "./PhysicsBody";
 
 export type PhysicsWorldOptions = {
   /** World-space walls the body colliders bounce inside. Omit for an unbounded world. */
-  bounds?: THREETypes.Box3;
+  bounds?: Box3;
   /**
    * Arbitrary walls as inward-facing planes (positive signed distance =
    * inside). Use for perspective-exact viewport bounces: pass the camera's
    * frustum side planes and bodies reflect exactly when their silhouette
    * reaches the screen edge, at any depth. Checked in addition to `bounds`.
    */
-  planes?: THREETypes.Plane[];
+  planes?: Plane[];
   /**
    * Constrain motion to the xy plane. Drift, plane push-out, and pair
    * separation never change z; plane normals are projected into xy so a
@@ -32,8 +31,8 @@ const AXES_3D = ["x", "y", "z"] as const;
 const AXES_2D = ["x", "y"] as const;
 const PLANE_XY_EPSILON = 1e-4;
 
-const _quat = { current: null as THREETypes.Quaternion | null };
-const _axis = { current: null as THREETypes.Vector3 | null };
+const _quat = new Quaternion();
+const _axis = new Vector3();
 
 function buildConvexHull2D(points: Float32Array): number[] {
   const sorted = Array.from({ length: points.length / 3 }, (_, index) => index);
@@ -56,10 +55,7 @@ function buildConvexHull2D(points: Float32Array): number[] {
   const cross = (origin: number, a: number, b: number) => {
     const ox = points[origin * 3]!;
     const oy = points[origin * 3 + 1]!;
-    return (
-      (points[a * 3]! - ox) * (points[b * 3 + 1]! - oy) -
-      (points[a * 3 + 1]! - oy) * (points[b * 3]! - ox)
-    );
+    return (points[a * 3]! - ox) * (points[b * 3 + 1]! - oy) - (points[a * 3 + 1]! - oy) * (points[b * 3]! - ox);
   };
 
   const lower: number[] = [];
@@ -88,8 +84,8 @@ function buildConvexHull2D(points: Float32Array): number[] {
  */
 export class PhysicsWorld {
   bodies: PhysicsBody[] = [];
-  bounds: THREETypes.Box3 | null;
-  planes: THREETypes.Plane[] | null;
+  bounds: Box3 | null;
+  planes: Plane[] | null;
   lockZ: boolean;
 
   private maxDelta: number;
@@ -123,11 +119,11 @@ export class PhysicsWorld {
     if (index !== -1) this.bodies.splice(index, 1);
   }
 
-  setBounds(bounds: THREETypes.Box3) {
+  setBounds(bounds: Box3) {
     this.bounds = bounds;
   }
 
-  setPlanes(planes: THREETypes.Plane[]) {
+  setPlanes(planes: Plane[]) {
     this.planes = planes;
   }
 
@@ -135,9 +131,6 @@ export class PhysicsWorld {
   step(delta: number) {
     const dt = Math.min(delta, this.maxDelta);
     if (dt <= 0) return;
-
-    _quat.current ??= new THREE.Quaternion();
-    _axis.current ??= new THREE.Vector3();
 
     for (const body of this.bodies) {
       if (this.lockZ) body.velocity.z = 0;
@@ -147,9 +140,9 @@ export class PhysicsWorld {
 
       const spin = body.angularVelocity.length();
       if (spin > 0) {
-        _axis.current.copy(body.angularVelocity).divideScalar(spin);
-        _quat.current.setFromAxisAngle(_axis.current, spin * dt);
-        body.object.quaternion.premultiply(_quat.current);
+        _axis.copy(body.angularVelocity).divideScalar(spin);
+        _quat.setFromAxisAngle(_axis, spin * dt);
+        body.object.quaternion.premultiply(_quat);
       }
 
       // Rotation changes the world silhouette, so the collider must refresh
@@ -292,8 +285,16 @@ export class PhysicsWorld {
         const direction = aCenter <= bCenter ? -1 : 1; // pushes `a` this way
         const push = (direction * minOverlap) / 2;
 
-        a.translate(separationAxis === "x" ? push : 0, separationAxis === "y" ? push : 0, separationAxis === "z" ? push : 0);
-        b.translate(separationAxis === "x" ? -push : 0, separationAxis === "y" ? -push : 0, separationAxis === "z" ? -push : 0);
+        a.translate(
+          separationAxis === "x" ? push : 0,
+          separationAxis === "y" ? push : 0,
+          separationAxis === "z" ? push : 0
+        );
+        b.translate(
+          separationAxis === "x" ? -push : 0,
+          separationAxis === "y" ? -push : 0,
+          separationAxis === "z" ? -push : 0
+        );
 
         // Swap axis velocities only when the pair is approaching, so a
         // just-resolved contact can't re-trigger while they separate.

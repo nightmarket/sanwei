@@ -1,20 +1,19 @@
-import type * as THREETypes from "three";
-import { THREE } from "../three-adapter";
+import { Box3, type BufferAttribute, Matrix4, type Mesh, type Object3D, Vector3 } from "three";
 
 export type PhysicsBodyOptions = {
-  object: THREETypes.Object3D;
+  object: Object3D;
   /** World units / second. */
-  velocity?: THREETypes.Vector3;
+  velocity?: Vector3;
   /** World-space rotation axis scaled by radians / second. */
-  angularVelocity?: THREETypes.Vector3;
+  angularVelocity?: Vector3;
   /** Energy kept on bounce (1 = perfectly elastic). */
   restitution?: number;
 };
 
-const _box = /* lazily created */ { current: null as THREETypes.Box3 | null };
-const _mat = { current: null as THREETypes.Matrix4 | null };
-const _center = { current: null as THREETypes.Vector3 | null };
-const _vertex = { current: null as THREETypes.Vector3 | null };
+const _box = new Box3();
+const _mat = new Matrix4();
+const _center = new Vector3();
+const _vertex = new Vector3();
 
 /**
  * A kinematic body with an exact vertex-set collider. The object's unique
@@ -28,17 +27,17 @@ const _vertex = { current: null as THREETypes.Vector3 | null };
  * Bodies without geometry fall back to a rotated-extents box collider.
  */
 export class PhysicsBody {
-  object: THREETypes.Object3D;
-  velocity: THREETypes.Vector3;
-  angularVelocity: THREETypes.Vector3;
+  object: Object3D;
+  velocity: Vector3;
+  angularVelocity: Vector3;
   restitution: number;
 
   /** Local AABB half-extents at identity rotation (rotated-extents fallback). */
-  readonly halfExtents: THREETypes.Vector3;
+  readonly halfExtents = new Vector3();
   /** Local AABB center offset from the object origin. */
-  readonly localCenter: THREETypes.Vector3;
+  readonly localCenter = new Vector3();
   /** Exact world-space AABB of the rotated mesh — refreshed by `updateWorldAABB()` each step. */
-  readonly worldAABB: THREETypes.Box3;
+  readonly worldAABB = new Box3();
 
   /** Deduplicated vertex positions in body-local space (xyz triplets). Empty when the object has no geometry. */
   localPoints: Float32Array = new Float32Array(0);
@@ -47,12 +46,9 @@ export class PhysicsBody {
 
   constructor({ object, velocity, angularVelocity, restitution = 1 }: PhysicsBodyOptions) {
     this.object = object;
-    this.velocity = velocity ?? new THREE.Vector3();
-    this.angularVelocity = angularVelocity ?? new THREE.Vector3();
+    this.velocity = velocity ?? new Vector3();
+    this.angularVelocity = angularVelocity ?? new Vector3();
     this.restitution = restitution;
-    this.halfExtents = new THREE.Vector3();
-    this.localCenter = new THREE.Vector3();
-    this.worldAABB = new THREE.Box3();
 
     this.computeLocalBounds();
     this.updateWorldAABB();
@@ -66,9 +62,6 @@ export class PhysicsBody {
    * transforms of their own — true for bodies added directly to a scene.
    */
   computeLocalBounds() {
-    _box.current ??= new THREE.Box3();
-    _vertex.current ??= new THREE.Vector3();
-
     const { object } = this;
     const prevPosition = object.position.clone();
     const prevQuaternion = object.quaternion.clone();
@@ -79,25 +72,24 @@ export class PhysicsBody {
     object.scale.set(1, 1, 1);
     object.updateMatrixWorld(true);
 
-    _box.current.setFromObject(object);
-    _box.current.getCenter(this.localCenter);
-    _box.current.getSize(this.halfExtents).multiplyScalar(0.5);
+    _box.setFromObject(object);
+    _box.getCenter(this.localCenter);
+    _box.getSize(this.halfExtents).multiplyScalar(0.5);
 
     // Collect unique vertex positions in body-local space. Seams and shared
     // corners collapse (a TorusGeometry's ~1.2k entries dedup by ~6%, a box's
     // 24 down to 8), keeping the per-step transform loop as small as possible.
-    const vertex = _vertex.current;
     const seen = new Set<string>();
     const points: number[] = [];
     object.traverse((child) => {
-      const position = (child as THREETypes.Mesh).geometry?.getAttribute?.("position");
+      const position = (child as Mesh).geometry?.getAttribute?.("position");
       if (!position) return;
       for (let i = 0; i < position.count; i++) {
-        vertex.fromBufferAttribute(position as THREETypes.BufferAttribute, i).applyMatrix4(child.matrixWorld);
-        const key = `${Math.round(vertex.x * 1e4)},${Math.round(vertex.y * 1e4)},${Math.round(vertex.z * 1e4)}`;
+        _vertex.fromBufferAttribute(position as BufferAttribute, i).applyMatrix4(child.matrixWorld);
+        const key = `${Math.round(_vertex.x * 1e4)},${Math.round(_vertex.y * 1e4)},${Math.round(_vertex.z * 1e4)}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        points.push(vertex.x, vertex.y, vertex.z);
+        points.push(_vertex.x, _vertex.y, _vertex.z);
       }
     });
     this.localPoints = new Float32Array(points);
@@ -160,10 +152,7 @@ export class PhysicsBody {
 
   /** Geometry-less fallback: rotated-extents AABB `|R| · halfExtents` around the local box. */
   private updateWorldAABBFromExtents() {
-    _mat.current ??= new THREE.Matrix4();
-    _center.current ??= new THREE.Vector3();
-
-    const e = _mat.current.makeRotationFromQuaternion(this.object.quaternion).elements;
+    const e = _mat.makeRotationFromQuaternion(this.object.quaternion).elements;
     const { x: sx, y: sy, z: sz } = this.object.scale;
     const hx = this.halfExtents.x * sx;
     const hy = this.halfExtents.y * sy;
@@ -173,7 +162,7 @@ export class PhysicsBody {
     const wy = Math.abs(e[1]!) * hx + Math.abs(e[5]!) * hy + Math.abs(e[9]!) * hz;
     const wz = Math.abs(e[2]!) * hx + Math.abs(e[6]!) * hy + Math.abs(e[10]!) * hz;
 
-    const center = _center.current
+    const center = _center
       .copy(this.localCenter)
       .multiply(this.object.scale)
       .applyQuaternion(this.object.quaternion)

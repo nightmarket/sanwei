@@ -1,4 +1,4 @@
-import { THREE } from "../three-adapter";
+import { PerspectiveCamera, Vector3 } from "three";
 import { type CameraConfig, CameraController } from "./CameraController";
 import type { DebugContext } from "./debugHelpers";
 import type { AppUniformsShape } from "./globalUniformsAdapter";
@@ -25,15 +25,17 @@ export class CameraManager {
   controllers: Record<string, CameraController> = {};
   activeController: CameraController | null = null;
   orbitControls: DebugOrbitControls | null = null;
-  debugCamera: any = null;
+  debugCamera: PerspectiveCamera | null = null;
 
   constructor(private host: CameraManagerHost) {}
 
   async initDebug({ debug, pane }: DebugContext) {
-    this.debugCamera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.001, 1000);
-    this.debugCamera.position.set(0, 0, 40);
+    const debugCamera = new PerspectiveCamera(80, 1, 0.001, 1000);
+    debugCamera.position.set(0, 0, 40);
+    this.debugCamera = debugCamera;
+    this.resize();
 
-    this.orbitControls = await debug.createOrbitControls(this.debugCamera, this.host.renderer.domElement);
+    this.orbitControls = await debug.createOrbitControls(debugCamera, this.host.renderer.domElement);
     this.orbitControls.enableDamping = true;
     this.orbitControls.enabled = CAMERA_MANAGER_UNIFORMS.enableOrbitControls;
 
@@ -50,36 +52,29 @@ export class CameraManager {
     });
 
     cameraFolder
-      .addBinding(this.debugCamera, "fov", {
+      .addBinding(debugCamera, "fov", {
         min: 10,
         max: 180,
         step: 1,
       })
-      .on("change", () => {
-        this.debugCamera.updateProjectionMatrix();
-      });
+      .on("change", () => debugCamera.updateProjectionMatrix());
 
-    cameraFolder.addBinding(this.debugCamera, "position");
+    cameraFolder.addBinding(debugCamera, "position");
 
     cameraFolder
-      .addBinding(this.debugCamera, "zoom", {
+      .addBinding(debugCamera, "zoom", {
         min: 0,
         max: 20,
         step: 0.5,
       })
-      .on("change", () => {
-        this.debugCamera.updateProjectionMatrix();
-      });
+      .on("change", () => debugCamera.updateProjectionMatrix());
 
     cameraFolder.addButton({ title: "Log Position" }).on("click", () => {
-      this.debugCamera.updateMatrixWorld();
-      const position = this.debugCamera.position.clone().applyMatrix4(this.debugCamera.matrixWorld);
-
-      const { x, y, z } = position;
+      debugCamera.updateMatrixWorld();
+      const { x, y, z } = debugCamera.position.clone().applyMatrix4(debugCamera.matrixWorld);
       console.log(`Position: ${x}, ${y}, ${z}`);
 
-      const lookAt = new THREE.Vector3(0, 0, -1);
-      lookAt.applyQuaternion(this.debugCamera.quaternion);
+      const lookAt = new Vector3(0, 0, -1).applyQuaternion(debugCamera.quaternion);
       console.log(`LookAt: ${lookAt.x}, ${lookAt.y}, ${lookAt.z}`);
     });
   }
@@ -111,16 +106,15 @@ export class CameraManager {
   update() {
     if (CAMERA_MANAGER_UNIFORMS.enableOrbitControls && this.orbitControls) {
       this.orbitControls.update();
-    } else {
-      this.activeController?.update();
     }
   }
 
   resize() {
     this.activeController?.resize();
 
-    if (this.debugCamera) {
-      this.debugCamera.aspect = window.innerWidth / window.innerHeight;
+    const { x, y } = this.host.uniforms.uScreen.value;
+    if (this.debugCamera && x > 0 && y > 0) {
+      this.debugCamera.aspect = x / y;
       this.debugCamera.updateProjectionMatrix();
     }
   }
@@ -128,10 +122,6 @@ export class CameraManager {
   destroy() {
     this.orbitControls?.dispose();
     this.orbitControls = null;
-
-    for (const controller of Object.values(this.controllers)) {
-      controller.camera = null as any;
-    }
     this.controllers = {};
     this.activeController = null;
     this.debugCamera = null;

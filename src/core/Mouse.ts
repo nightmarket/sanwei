@@ -1,6 +1,5 @@
 import normalizeWheel from "normalize-wheel-es";
-import type { Vector2 } from "three";
-import { THREE } from "../three-adapter";
+import { MathUtils, Vector2 } from "three";
 import { events, getPos } from "../util/responsive";
 import { NO_RAYCAST_CLASS } from "./constants";
 
@@ -58,11 +57,18 @@ export interface MouseScrollState {
   dragStart: Vector2;
 }
 
+const isTouchEvent = (e: MouseEvent | TouchEvent) => "changedTouches" in e;
+
+/** True when the event originated inside an element flagged with `NO_RAYCAST_CLASS` — UI panels
+ * mark themselves with this class so input-driven scene behaviors (raycast, scroll, drag) don't
+ * fire while interacting with overlay UI. */
+const isOverUi = (e: Event) => e.target instanceof Element && !!e.target.closest(NO_RAYCAST_SELECTOR);
+
+const clickMoveThreshold = (e: MouseEvent | TouchEvent) =>
+  isTouchEvent(e) ? TOUCH_CLICK_MOVE_THRESHOLD_PX : MOUSE_CLICK_MOVE_THRESHOLD_PX;
+
 class MouseClass {
   isSingleton = true;
-  subscribers: Record<string, string[]> = {};
-  callbacks: Record<string, () => void> = {};
-  shouldUpdate = true;
   blockedByUI = false;
   /** False until the first pointer event arrives. Until then `position` sits at NDC origin (0, 0)
    * so any consumer doing trig with it (e.g. spiral mouse-parallax tilt) reads neutral instead of
@@ -70,30 +76,37 @@ class MouseClass {
    * fire from the origin before the user has actually pointed at anything. */
   hasMoved = false;
 
-  position!: Vector2;
-  lastPosition!: Vector2;
-  lastTime: number | null = null;
-  velocity!: Vector2;
-  scroll!: MouseScrollState;
-  scrollDirection!: Vector2;
-  drag!: MouseDragState;
+  /** Window-relative NDC (y up). */
+  position = new Vector2();
+  velocity = new Vector2();
+  scroll: MouseScrollState = {
+    ease: 0.15,
+    current: new Vector2(),
+    target: new Vector2(),
+    last: new Vector2(),
+    velocity: new Vector2(),
+    dragStart: new Vector2(),
+  };
+  scrollDirection = new Vector2(SCROLL_DIRECTION.NONE, SCROLL_DIRECTION.NONE);
+  drag: MouseDragState = {
+    start: new Vector2(),
+    active: false,
+    isDragging: false,
+    startTime: 0,
+    lastMoveTime: 0,
+    momentumVelocity: new Vector2(),
+    scrollScale: MOUSE_DRAG_SCROLL_SCALE,
+  };
   lastUpWasClick = false;
-  private dragStartPx!: Vector2;
-  private wheelMomentumVelocity!: Vector2;
-  private wheelMomentumScratch!: Vector2;
+
+  private lastPosition = new Vector2();
+  private lastTime: number | null = null;
+  private dragStartPx = new Vector2();
+  private wheelMomentumVelocity = new Vector2();
+  private wheelMomentumScratch = new Vector2();
   private isScrollLocked = false;
   private dragLongPressTimeout: number | null = null;
   private handledWheelEvents = new WeakSet<WheelEvent>();
-
-  /** True when the event originated inside an element flagged with `NO_RAYCAST_CLASS` — UI panels
-   * mark themselves with this class so input-driven scene behaviors (raycast, scroll, drag) don't
-   * fire while interacting with overlay UI. */
-  private isOverUi = (e: Event) => e.target instanceof Element && !!e.target.closest(NO_RAYCAST_SELECTOR);
-
-  private getClickMoveThreshold = (e: MouseEvent | TouchEvent) =>
-    "changedTouches" in e ? TOUCH_CLICK_MOVE_THRESHOLD_PX : MOUSE_CLICK_MOVE_THRESHOLD_PX;
-
-  private isTouchEvent = (e: MouseEvent | TouchEvent) => "changedTouches" in e;
 
   private clearLongPressTimeout = () => {
     if (this.dragLongPressTimeout === null) return;
@@ -107,25 +120,18 @@ class MouseClass {
     this.drag.isDragging = true;
   };
 
-  private updatePosition = (e: MouseEvent | TouchEvent, now = performance.now()) => {
-    this.blockedByUI = this.isOverUi(e);
-
-    if (!this.lastTime) {
-      this.lastTime = now;
-    }
+  private updatePosition = (e: MouseEvent | TouchEvent, now: number) => {
+    this.blockedByUI = isOverUi(e);
+    this.lastTime ??= now;
 
     const pointer = getPos(e);
-    const { x, y } = pointer;
-    this.position.set((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1);
+    this.position.set((pointer.x / window.innerWidth) * 2 - 1, -(pointer.y / window.innerHeight) * 2 + 1);
     this.hasMoved = true;
 
     const delta = Math.max(now - this.lastTime, 1);
-    const vX = (this.position.x - this.lastPosition.x) / delta;
-    const vY = (this.position.y - this.lastPosition.y) / delta;
-
+    this.velocity.set((this.position.x - this.lastPosition.x) / delta, (this.position.y - this.lastPosition.y) / delta);
     this.lastTime = now;
     this.lastPosition.copy(this.position);
-    this.velocity.set(vX, vY);
 
     return pointer;
   };
@@ -153,28 +159,24 @@ class MouseClass {
     const now = performance.now();
     const { x, y } = this.updatePosition(e, now);
 
-    if (this.drag.active && !this.isScrollLocked) {
-      const threshold = this.getClickMoveThreshold(e);
-      const clickDeltaX = x - this.dragStartPx.x;
-      const clickDeltaY = y - this.dragStartPx.y;
+    if (!this.drag.active || this.isScrollLocked) return;
 
-      if (!this.drag.isDragging && clickDeltaX * clickDeltaX + clickDeltaY * clickDeltaY > threshold * threshold) {
-        this.startDrag();
-      }
+    const threshold = clickMoveThreshold(e);
+    const clickDeltaX = x - this.dragStartPx.x;
+    const clickDeltaY = y - this.dragStartPx.y;
 
-      if (this.drag.isDragging) {
-        this.updateDragTarget(now);
-      }
+    if (!this.drag.isDragging && clickDeltaX * clickDeltaX + clickDeltaY * clickDeltaY > threshold * threshold) {
+      this.startDrag();
     }
 
-    this.subscribers[events.move]?.forEach((id) => {
-      this.callbacks[id]?.();
-    });
+    if (this.drag.isDragging) {
+      this.updateDragTarget(now);
+    }
   };
 
   private handleMousedown = (e: MouseEvent | TouchEvent) => {
     this.clearLongPressTimeout();
-    if (this.isOverUi(e)) return;
+    if (isOverUi(e)) return;
     const now = performance.now();
     const { x, y } = this.updatePosition(e, now);
     this.lastUpWasClick = false;
@@ -184,7 +186,7 @@ class MouseClass {
     this.drag.startTime = now;
     this.drag.lastMoveTime = now;
     this.drag.start.copy(this.position);
-    this.drag.scrollScale = this.isTouchEvent(e) ? TOUCH_DRAG_SCROLL_SCALE : MOUSE_DRAG_SCROLL_SCALE;
+    this.drag.scrollScale = isTouchEvent(e) ? TOUCH_DRAG_SCROLL_SCALE : MOUSE_DRAG_SCROLL_SCALE;
     this.dragStartPx.set(x, y);
     this.scroll.dragStart.copy(this.scroll.target);
     this.drag.momentumVelocity.set(0, 0);
@@ -203,7 +205,7 @@ class MouseClass {
     const { x, y } = this.updatePosition(e, now);
     this.clearLongPressTimeout();
 
-    const threshold = this.getClickMoveThreshold(e);
+    const threshold = clickMoveThreshold(e);
     const deltaX = x - this.dragStartPx.x;
     const deltaY = y - this.dragStartPx.y;
     const movedBeyondClick = deltaX * deltaX + deltaY * deltaY > threshold * threshold;
@@ -226,8 +228,8 @@ class MouseClass {
     this.drag.momentumVelocity.set(0, 0);
     const stepScale = isCoarseWheel ? COARSE_WHEEL_STEP_SCALE : TRACKPAD_WHEEL_STEP_SCALE;
     const maxStep = isCoarseWheel ? MAX_COARSE_WHEEL_STEP_PX : MAX_WHEEL_STEP_PX;
-    const stepX = THREE.MathUtils.clamp(pixelX, -maxStep, maxStep) * stepScale;
-    const stepY = THREE.MathUtils.clamp(pixelY, -maxStep, maxStep) * stepScale;
+    const stepX = MathUtils.clamp(pixelX, -maxStep, maxStep) * stepScale;
+    const stepY = MathUtils.clamp(pixelY, -maxStep, maxStep) * stepScale;
     this.scroll.target.x += stepX;
     this.scroll.target.y += stepY;
     this.scroll.velocity.set(stepX / 10, stepY / 10);
@@ -243,7 +245,7 @@ class MouseClass {
 
   handleWheelDelta = (pixelX: number, pixelY: number, event?: WheelEvent) => {
     if (event) this.handledWheelEvents.add(event);
-    if (event && this.isOverUi(event)) return false;
+    if (event && isOverUi(event)) return false;
 
     const isCoarseWheel =
       event?.deltaMode !== 0 || Math.max(Math.abs(pixelX), Math.abs(pixelY)) >= COARSE_WHEEL_THRESHOLD_PX;
@@ -262,40 +264,6 @@ class MouseClass {
   };
 
   init = () => {
-    this.position = new THREE.Vector2(0, 0);
-    this.lastPosition = new THREE.Vector2(0, 0);
-    this.lastTime = null;
-    this.hasMoved = false;
-    this.velocity = new THREE.Vector2(0, 0);
-    this.lastUpWasClick = false;
-    this.dragStartPx = new THREE.Vector2(0, 0);
-    this.wheelMomentumVelocity = new THREE.Vector2(0, 0);
-    this.wheelMomentumScratch = new THREE.Vector2(0, 0);
-
-    this.scroll = {
-      ease: 0.15,
-      current: new THREE.Vector2(0, 0),
-      target: new THREE.Vector2(0, 0),
-      last: new THREE.Vector2(0, 0),
-      velocity: new THREE.Vector2(0, 0),
-      dragStart: new THREE.Vector2(0, 0),
-    };
-
-    this.scrollDirection = new THREE.Vector2(SCROLL_DIRECTION.NONE, SCROLL_DIRECTION.NONE);
-
-    this.drag = {
-      start: new THREE.Vector2(0, 0),
-      active: false,
-      isDragging: false,
-      startTime: 0,
-      lastMoveTime: 0,
-      momentumVelocity: new THREE.Vector2(0, 0),
-      scrollScale: MOUSE_DRAG_SCROLL_SCALE,
-    };
-
-    this.subscribers[events.move] = [];
-    if (events.wheel) this.subscribers[events.wheel] = [];
-
     window.addEventListener(events.move, this.handleMousemove as EventListener);
     window.addEventListener(events.down, this.handleMousedown as EventListener);
     window.addEventListener(events.up, this.handleMouseup as EventListener);
@@ -303,17 +271,6 @@ class MouseClass {
     if (events.wheel) {
       window.addEventListener(events.wheel, this.handleWheel as EventListener, { passive: true });
     }
-  };
-
-  subscribe = (event: string, id: string, cb: () => void) => {
-    if (!this.subscribers[event]) this.subscribers[event] = [];
-    this.subscribers[event].push(id);
-    this.callbacks[id] = cb;
-  };
-
-  unsubscribe = (event: string, id: string) => {
-    this.subscribers[event] = this.subscribers[event]?.filter((i) => i !== id) ?? [];
-    delete this.callbacks[id];
   };
 
   setScrollLocked = (isLocked: boolean) => {
@@ -338,8 +295,6 @@ class MouseClass {
   };
 
   update = () => {
-    if (!this.shouldUpdate) return;
-
     if (!this.drag.active) {
       if (this.drag.momentumVelocity.lengthSq() > DRAG_MOMENTUM_STOP_THRESHOLD_SQ) {
         this.drag.momentumVelocity.multiplyScalar(DRAG_MOMENTUM_FRICTION);
@@ -392,8 +347,6 @@ class MouseClass {
       window.removeEventListener(events.wheel, this.handleWheel as EventListener);
     }
 
-    this.subscribers = {};
-    this.callbacks = {};
     this.handledWheelEvents = new WeakSet<WheelEvent>();
   };
 }

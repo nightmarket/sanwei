@@ -1,4 +1,4 @@
-import type * as THREE from "three";
+import { Vector2, type WebGLRenderTarget } from "three";
 import { AfterimagePass } from "three/addons/postprocessing/AfterimagePass.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { LUTPass } from "three/addons/postprocessing/LUTPass.js";
@@ -75,10 +75,13 @@ export class Post implements IPost {
     let pass: any;
 
     if (passType === PassType.RENDER) {
-      pass = new RenderPass(this.sceneClass.scene, this.app.cameras.getActiveCamera());
+      const camera = this.app.cameras.getActiveCamera();
+      if (!camera) throw new Error("Post requires an active camera before init()");
+      pass = new RenderPass(this.sceneClass.scene, camera);
     } else if (passType === PassType.BLOOM) {
+      const { x, y } = this.app.uniforms.uScreen.value;
       pass = new UnrealBloomPass(
-        this.app.uniforms.uScreen.value as THREE.Vector2,
+        new Vector2(x, y),
         config.uniforms.strength.value,
         config.uniforms.radius.value,
         config.uniforms.threshold.value
@@ -150,7 +153,7 @@ export class Post implements IPost {
    * Render the post-processing pipeline to an offscreen target.
    * Used by TransitionController to capture scene output.
    */
-  renderToTarget(target: THREE.WebGLRenderTarget) {
+  renderToTarget(target: WebGLRenderTarget) {
     const activeCamera = this.app.cameras.getActiveCamera();
 
     this.passes[PassType.RENDER].scene = this.sceneClass.scene;

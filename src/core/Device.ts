@@ -1,4 +1,4 @@
-import { getGPUTier } from "detect-gpu";
+import { getGPUTier, type TierResult } from "detect-gpu";
 import { isTouchDevice } from "../util/responsive";
 
 export type GpuTier = 0 | 1 | 2 | 3;
@@ -12,16 +12,14 @@ export type QualityPreset = {
   effects: boolean;
 };
 
-const DEFAULT_QUALITY: QualityPreset = {
-  dpr: 1,
-  postScale: 0.5,
-  antialias: false,
-  effects: true,
-};
+const DEFAULT_TIER: GpuTier = 1;
 
-function clampTier(tier: number): GpuTier {
+/** detect-gpu fetches its benchmark table from a CDN; past this, fall back to the default tier. */
+const DETECT_TIMEOUT_MS = 2000;
+
+function clampTier(tier: number | undefined): GpuTier {
   if (tier === 0 || tier === 1 || tier === 2 || tier === 3) return tier;
-  return 1;
+  return DEFAULT_TIER;
 }
 
 function qualityFor(tier: GpuTier, isMobile: boolean): QualityPreset {
@@ -44,36 +42,28 @@ function qualityFor(tier: GpuTier, isMobile: boolean): QualityPreset {
 class DeviceClass {
   isSingleton = true;
 
-  gpuInfo: any;
+  gpuInfo: TierResult | null = null;
   isMobile = false;
-  tier: GpuTier = 1;
-  quality: QualityPreset = { ...DEFAULT_QUALITY };
+  tier: GpuTier = DEFAULT_TIER;
+  quality: QualityPreset = { dpr: 1, postScale: 0.5, antialias: false, effects: true };
   /** Device-wide pixel-ratio policy. Each SanweiApp seeds its `uPixelRatio` uniform from this. */
   pixelRatio = 1;
   private ready: Promise<void> | null = null;
 
-  async init() {
-    if (!this.ready) {
-      this.ready = this.detect();
-    }
+  init() {
+    this.ready ??= this.detect();
     return this.ready;
   }
 
   private async detect() {
-    this.gpuInfo = await getGPUTier();
     this.isMobile = isTouchDevice();
-    this.tier = clampTier(this.gpuInfo?.tier ?? 1);
+    this.gpuInfo = await Promise.race([
+      getGPUTier(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), DETECT_TIMEOUT_MS)),
+    ]);
+    this.tier = clampTier(this.gpuInfo?.tier);
     this.quality = qualityFor(this.tier, this.isMobile);
     this.pixelRatio = this.quality.dpr;
-  }
-
-  destroy() {
-    this.gpuInfo = null;
-    this.isMobile = false;
-    this.tier = 1;
-    this.quality = { ...DEFAULT_QUALITY };
-    this.pixelRatio = 1;
-    this.ready = null;
   }
 }
 

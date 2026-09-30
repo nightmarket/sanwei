@@ -12,8 +12,6 @@ export type DebugSetupContext = {
   debug: DebugClass;
   pane: Pane | null;
   inspectorPane: Pane | null;
-  /** @deprecated use inspectorPane */
-  tunePane: Pane | null;
   createPane: (options?: PaneOptions) => Pane;
 };
 
@@ -21,8 +19,6 @@ export type DebugSetup = (context: {
   debug: DebugClass;
   pane: Pane;
   inspectorPane: Pane;
-  /** @deprecated use inspectorPane */
-  tunePane: Pane;
   createPane: (options?: PaneOptions) => Pane;
 }) => void | (() => void);
 
@@ -43,10 +39,6 @@ export class DebugClass {
   isSingleton = true;
   pane: Pane | null = null;
   inspectorPane: Pane | null = null;
-  /** @deprecated use inspectorPane */
-  get tunePane() {
-    return this.inspectorPane;
-  }
   perf: PerfMonitor | null = null;
 
   private _renderer: any = null;
@@ -75,9 +67,7 @@ export class DebugClass {
     if (renderer) this.renderer = renderer;
 
     if (!this.PaneClass) {
-      if (!this.initPromise) {
-        this.initPromise = this.doInit();
-      }
+      this.initPromise ??= this.doInit();
       try {
         await this.initPromise;
       } finally {
@@ -154,7 +144,6 @@ export class DebugClass {
       debug: this,
       pane: this.pane,
       inspectorPane: this.inspectorPane,
-      tunePane: this.inspectorPane,
       createPane: (options) => this.createPane(options),
     };
   }
@@ -174,7 +163,6 @@ export class DebugClass {
         ...context,
         pane: context.pane,
         inspectorPane: context.inspectorPane,
-        tunePane: context.inspectorPane,
       }) ?? undefined;
   }
 
@@ -205,14 +193,11 @@ export class DebugClass {
     const folder = this.folders.get(name);
     if (folder) {
       fn(folder);
-    } else {
-      let pending = this.queue.get(name);
-      if (!pending) {
-        pending = [];
-        this.queue.set(name, pending);
-      }
-      pending.push(fn);
+      return;
     }
+    const pending = this.queue.get(name);
+    if (pending) pending.push(fn);
+    else this.queue.set(name, [fn]);
   }
 
   flushWarnings() {
@@ -222,20 +207,8 @@ export class DebugClass {
     this.queue.clear();
   }
 
-  addButton(
-    target: {
-      addButton: (opts: { title: string; label?: string }) => {
-        on: (ev: string, cb: () => void) => void;
-      };
-    },
-    { title = "Click", label = "", cb }: { title?: string; label?: string; cb: () => void }
-  ) {
-    const btn = target.addButton({ title, label });
-    btn.on("click", cb);
-  }
-
   async createOrbitControls(camera: Camera, domElement: HTMLElement) {
-    const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
+    const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
     return new OrbitControls(camera, domElement);
   }
 
@@ -255,10 +228,6 @@ export class DebugClass {
     this.perfApi = null;
     this.folders.clear();
     this.queue.clear();
-  }
-
-  update() {
-    // Perf sampling is owned by @nightmarket/tiao/perf-pane (ticker + render instrumentation).
   }
 }
 

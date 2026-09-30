@@ -1,6 +1,6 @@
+import { Mesh, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial, WebGLRenderTarget } from "three";
 import type { SanweiApp } from "../core/SanweiApp";
 import type { IScene } from "../core/types";
-import { THREE } from "../three-adapter";
 import { renderToTarget } from "../util/renderer";
 
 /**
@@ -15,12 +15,12 @@ import { renderToTarget } from "../util/renderer";
  *   }});
  */
 export class TransitionController {
-  private rtFrom: any;
-  private rtTo: any;
-  private transitionScene: any;
-  private transitionCamera: any;
-  private material: any;
-  private quadGeometry: any;
+  private rtFrom!: WebGLRenderTarget;
+  private rtTo!: WebGLRenderTarget;
+  private transitionScene!: Scene;
+  private transitionCamera!: OrthographicCamera;
+  private material!: ShaderMaterial;
+  private quadGeometry!: PlaneGeometry;
 
   private fromScene: IScene | null = null;
   private toScene: IScene | null = null;
@@ -34,13 +34,13 @@ export class TransitionController {
   init() {
     const { x: w, y: h } = this.app.uniforms.uScreen.value;
 
-    this.rtFrom = new THREE.WebGLRenderTarget(w, h);
-    this.rtTo = new THREE.WebGLRenderTarget(w, h);
+    this.rtFrom = new WebGLRenderTarget(w, h);
+    this.rtTo = new WebGLRenderTarget(w, h);
 
-    this.material = new THREE.ShaderMaterial({
+    this.material = new ShaderMaterial({
       uniforms: {
-        tScene1: { value: null },
-        tScene2: { value: null },
+        tScene1: { value: this.rtFrom.texture },
+        tScene2: { value: this.rtTo.texture },
         uProgress: { value: 0 },
       },
       vertexShader: /* glsl */ `
@@ -64,12 +64,10 @@ export class TransitionController {
       `,
     });
 
-    this.quadGeometry = new THREE.PlaneGeometry(2, 2);
-    const quad = new THREE.Mesh(this.quadGeometry, this.material);
-
-    this.transitionScene = new THREE.Scene();
-    this.transitionScene.add(quad);
-    this.transitionCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.quadGeometry = new PlaneGeometry(2, 2);
+    this.transitionScene = new Scene();
+    this.transitionScene.add(new Mesh(this.quadGeometry, this.material));
+    this.transitionCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   }
 
   /** Begin a transition between two scenes. */
@@ -81,8 +79,8 @@ export class TransitionController {
     this.frameCounter = 0;
 
     // Both scenes must be visible during the transition
-    if (fromScene.scene) fromScene.scene.visible = true;
-    if (toScene.scene) toScene.scene.visible = true;
+    fromScene.scene.visible = true;
+    toScene.scene.visible = true;
   }
 
   /** Called each frame by SceneManager while a transition is active. */
@@ -90,8 +88,9 @@ export class TransitionController {
     if (!this.isActive || !this.fromScene || !this.toScene) return;
 
     // Ping-pong: alternate between rendering scenes each frame
-    const scene = this.frameCounter % 2 === 0 ? this.fromScene : this.toScene;
-    const target = this.frameCounter % 2 === 0 ? this.rtFrom : this.rtTo;
+    const isFrom = this.frameCounter % 2 === 0;
+    const scene = isFrom ? this.fromScene : this.toScene;
+    const target = isFrom ? this.rtFrom : this.rtTo;
 
     if (scene.post) {
       scene.post.renderToTarget(target);
@@ -104,10 +103,7 @@ export class TransitionController {
     this.frameCounter++;
 
     // Always composite to screen
-    this.material.uniforms.tScene1.value = this.rtFrom.texture;
-    this.material.uniforms.tScene2.value = this.rtTo.texture;
     this.material.uniforms.uProgress.value = this.progress;
-
     this.app.render(this.transitionScene, this.transitionCamera);
   }
 
