@@ -1,6 +1,7 @@
 import { texture, uniform, uv } from "three/tsl";
 import {
   type Camera,
+  DepthTexture,
   HalfFloatType,
   type Node,
   NodeMaterial,
@@ -15,13 +16,19 @@ import {
 type TextureNode = ReturnType<typeof texture>;
 
 export type TrailCompositeContext = {
+  /** This frame's scene render and its depth buffer. */
   currentTex: TextureNode;
-  historyTex: TextureNode;
+  currentDepthTex: TextureNode;
+  /** Previous output of every layer, by layer index. */
+  history: TextureNode[];
   screenSize: ReturnType<typeof uniform>;
 };
 
 export type TrailPresentContext = {
-  trailTex: TextureNode;
+  /** Latest output of every layer, by layer index. */
+  trail: TextureNode[];
+  currentTex: TextureNode;
+  currentDepthTex: TextureNode;
 };
 
 export type TrailEffectOptions = {
@@ -31,16 +38,31 @@ export type TrailEffectOptions = {
   /** Texel type of the trail targets. Half float by default: the trail is a feedback loop, and
    * 8-bit targets re-quantize it every frame, which bands smooth seeds and makes them shimmer. */
   type?: TextureDataType;
-  composite: (ctx: TrailCompositeContext) => Node;
+  /** Feedback layers, each with its own ping-ponged target and composite pass. Extra layers carry
+   * data that doesn't fit beside the first (e.g. a colour per trail pixel). Default 1. */
+  layers?: number;
+  composite: (ctx: TrailCompositeContext, layer: number) => Node;
   present: (ctx: TrailPresentContext) => Node;
+};
+
+type TrailLayer = {
+  comp: RenderTarget;
+  old: RenderTarget;
+  history: TextureNode;
+  trail: TextureNode;
+  material: NodeMaterial;
+  quad: QuadMesh;
 };
 
 /**
  * Feedback trail: each frame renders the scene into `currentFrame`, composites
- * it with the previous result into a ping-ponged history target, and
- * `renderToScreen` draws the accumulated trail over whatever is bound.
+ * it with the previous result into ping-ponged history targets (one pair per
+ * layer), and `renderToScreen` draws the accumulated trail over whatever is bound.
  */
 export class TrailEffect {
+  /** Layers from this index on skip their composite pass; their history goes stale until re-enabled. */
+  activeLayers: number;
+
   private renderer: TrailEffectOptions["renderer"];
   private getScreenSize: () => { x: number; y: number };
   private resolutionScale: number;
@@ -48,17 +70,12 @@ export class TrailEffect {
   private presentFn: TrailEffectOptions["present"];
 
   private currentFrame: RenderTarget;
-  private compRT: RenderTarget;
-  private oldRT: RenderTarget;
-
   private currentTexNode: TextureNode;
-  private historyTexNode: TextureNode;
-  private trailTexNode: TextureNode;
+  private currentDepthTexNode: TextureNode;
+  private layers: TrailLayer[];
   private uTrailScreen = uniform(new Vector2(1, 1));
 
-  private compositeMaterial = new NodeMaterial();
   private presentMaterial = new NodeMaterial();
-  private compositeQuad = new QuadMesh(this.compositeMaterial);
   private presentQuad = new QuadMesh(this.presentMaterial);
 
   constructor(options: TrailEffectOptions) {
@@ -69,29 +86,50 @@ export class TrailEffect {
     this.presentFn = options.present;
 
     const type = options.type ?? HalfFloatType;
-    this.currentFrame = new RenderTarget(1, 1, { type });
-    this.compRT = new RenderTarget(1, 1, { type, depthBuffer: false });
-    this.oldRT = new RenderTarget(1, 1, { type, depthBuffer: false });
+    const depthTexture = new DepthTexture(1, 1);
+    this.currentFrame = new RenderTarget(1, 1, { type, depthTexture });
     this.currentTexNode = texture(this.currentFrame.texture);
-    this.historyTexNode = texture(this.oldRT.texture);
-    this.trailTexNode = texture(this.oldRT.texture);
+    this.currentDepthTexNode = texture(depthTexture);
+    this.layers = Array.from({ length: options.layers ?? 1 }, () => {
+      const comp = new RenderTarget(1, 1, { type, depthBuffer: false });
+      const old = new RenderTarget(1, 1, { type, depthBuffer: false });
+      const material = new NodeMaterial();
+      return {
+        comp,
+        old,
+        history: texture(old.texture),
+        trail: texture(old.texture),
+        material,
+        quad: new QuadMesh(material),
+      };
+    });
+    this.activeLayers = this.layers.length;
   }
 
   init() {
     this.currentFrame.texture.name = "TrailEffect.current";
-    this.compRT.texture.name = "TrailEffect.comp";
-    this.oldRT.texture.name = "TrailEffect.old";
-    this.currentTexNode.uvNode = uv();
-    this.historyTexNode.uvNode = this.currentTexNode.uvNode;
-    this.trailTexNode.uvNode = this.currentTexNode.uvNode;
+    const screenUv = uv();
+    this.currentTexNode.uvNode = screenUv;
+    this.currentDepthTexNode.uvNode = screenUv;
 
-    this.compositeMaterial.name = "TrailEffect.Composite";
-    this.compositeMaterial.fragmentNode = this.compositeFn({
-      currentTex: this.currentTexNode,
-      historyTex: this.historyTexNode,
-      screenSize: this.uTrailScreen,
+    const history = this.layers.map((layer) => layer.history);
+    this.layers.forEach((layer, i) => {
+      layer.comp.texture.name = `TrailEffect.comp${i}`;
+      layer.old.texture.name = `TrailEffect.old${i}`;
+      layer.history.uvNode = screenUv;
+      layer.trail.uvNode = screenUv;
+      layer.material.name = `TrailEffect.Composite${i}`;
+      layer.material.fragmentNode = this.compositeFn(
+        {
+          currentTex: this.currentTexNode,
+          currentDepthTex: this.currentDepthTexNode,
+          history,
+          screenSize: this.uTrailScreen,
+        },
+        i
+      );
+      layer.quad.name = `TrailEffect${i}`;
     });
-    this.compositeQuad.name = "TrailEffect";
 
     const { presentMaterial } = this;
     presentMaterial.name = "TrailEffect.Present";
@@ -99,7 +137,11 @@ export class TrailEffect {
     presentMaterial.depthWrite = false;
     presentMaterial.depthTest = false;
     presentMaterial.blending = NormalBlending;
-    presentMaterial.fragmentNode = this.presentFn({ trailTex: this.trailTexNode });
+    presentMaterial.fragmentNode = this.presentFn({
+      trail: this.layers.map((layer) => layer.trail),
+      currentTex: this.currentTexNode,
+      currentDepthTex: this.currentDepthTexNode,
+    });
     this.presentQuad.name = "TrailEffectPresent";
 
     this.resize();
@@ -108,7 +150,7 @@ export class TrailEffect {
 
   clear() {
     const previous = this.renderer.getRenderTarget();
-    for (const target of [this.currentFrame, this.compRT, this.oldRT]) {
+    for (const target of [this.currentFrame, ...this.layers.flatMap((layer) => [layer.comp, layer.old])]) {
       this.renderer.setRenderTarget(target);
       this.renderer.clear();
     }
@@ -116,21 +158,22 @@ export class TrailEffect {
   }
 
   update(scene: Scene, camera: Camera) {
-    this.currentTexNode.value = this.currentFrame.texture;
-    this.historyTexNode.value = this.oldRT.texture;
+    const active = this.layers.slice(0, this.activeLayers);
+    for (const layer of this.layers) layer.history.value = layer.old.texture;
 
     this.renderer.setRenderTarget(this.currentFrame);
     this.renderer.clear();
     this.renderer.render(scene, camera);
 
-    this.renderer.setRenderTarget(this.compRT);
-    this.compositeQuad.render(this.renderer);
-
-    [this.oldRT, this.compRT] = [this.compRT, this.oldRT];
+    for (const layer of active) {
+      this.renderer.setRenderTarget(layer.comp);
+      layer.quad.render(this.renderer);
+    }
+    for (const layer of active) [layer.old, layer.comp] = [layer.comp, layer.old];
   }
 
   renderToScreen() {
-    this.trailTexNode.value = this.oldRT.texture;
+    for (const layer of this.layers) layer.trail.value = layer.old.texture;
     this.presentQuad.render(this.renderer);
   }
 
@@ -141,17 +184,21 @@ export class TrailEffect {
     if (this.currentFrame.width === width && this.currentFrame.height === height) return;
 
     this.currentFrame.setSize(width, height);
-    this.compRT.setSize(width, height);
-    this.oldRT.setSize(width, height);
+    for (const layer of this.layers) {
+      layer.comp.setSize(width, height);
+      layer.old.setSize(width, height);
+    }
     this.uTrailScreen.value.set(width, height);
     this.clear();
   }
 
   destroy() {
     this.currentFrame.dispose();
-    this.compRT.dispose();
-    this.oldRT.dispose();
-    this.compositeMaterial.dispose();
+    for (const layer of this.layers) {
+      layer.comp.dispose();
+      layer.old.dispose();
+      layer.material.dispose();
+    }
     this.presentMaterial.dispose();
   }
 }

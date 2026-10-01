@@ -7,7 +7,6 @@ import {
   NeutralToneMapping,
   NoToneMapping,
   PCFShadowMap,
-  PCFSoftShadowMap,
   ReinhardToneMapping,
   SRGBColorSpace,
 } from "three";
@@ -28,7 +27,8 @@ const TONE_MAPPINGS: Record<string, number> = {
 const SHADOW_MAPS: Record<string, number> = {
   [SHADOW_MAP_TYPES.Basic]: BasicShadowMap,
   [SHADOW_MAP_TYPES.PCF]: PCFShadowMap,
-  [SHADOW_MAP_TYPES.PCFSoft]: PCFSoftShadowMap,
+  // r186 made PCFShadowMap the soft filter; PCFSoftShadowMap is gone on WebGPU.
+  [SHADOW_MAP_TYPES.PCFSoft]: PCFShadowMap,
 };
 
 const optionsFor = (types: Record<string, string>) =>
