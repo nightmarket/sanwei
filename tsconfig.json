@@ -14,7 +14,7 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "moduleDetection": "force",
-    "types": ["node"]
+    "types": ["node", "@webgpu/types"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]
