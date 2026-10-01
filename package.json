@@ -1,6 +1,6 @@
 {
   "name": "@nightmarket/sanwei",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Three.js / WebGPU scene engine — managers, postprocessing, and debug tooling.",
   "keywords": [
     "three",
@@ -57,6 +57,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
+    "lint": "biome check",
     "prepublishOnly": "pnpm run check-types",
     "publish:package": "pnpm run check-types && pnpm publish --access public"
   },
@@ -75,6 +76,7 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "2.2.0",
     "@nightmarket/tiao": "^0.7.0",
     "@types/node": "^22.15.0",
     "@types/three": "^0.178.0",

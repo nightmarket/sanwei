@@ -21,6 +21,7 @@ export class TransitionController {
   private transitionCamera!: OrthographicCamera;
   private material!: ShaderMaterial;
   private quadGeometry!: PlaneGeometry;
+  private readonly uProgress = { value: 0 };
 
   private fromScene: IScene | null = null;
   private toScene: IScene | null = null;
@@ -41,7 +42,7 @@ export class TransitionController {
       uniforms: {
         tScene1: { value: this.rtFrom.texture },
         tScene2: { value: this.rtTo.texture },
-        uProgress: { value: 0 },
+        uProgress: this.uProgress,
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -103,7 +104,7 @@ export class TransitionController {
     this.frameCounter++;
 
     // Always composite to screen
-    this.material.uniforms.uProgress.value = this.progress;
+    this.uProgress.value = this.progress;
     this.app.render(this.transitionScene, this.transitionCamera);
   }
 

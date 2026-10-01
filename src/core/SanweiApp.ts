@@ -347,7 +347,7 @@ export class SanweiApp {
 }
 
 function paneTitle(name: string) {
-  return name ? name[0]!.toUpperCase() + name.slice(1) : name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /** Create and fully initialize a {@link SanweiApp} for one canvas. */

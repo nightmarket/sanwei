@@ -43,12 +43,11 @@ if (isTouchDevice()) {
 }
 
 export const getPos = (e: MouseEvent | TouchEvent) => {
-  const x = "changedTouches" in e ? (e as TouchEvent).changedTouches[0].clientX : (e as MouseEvent).clientX;
-  const y = "changedTouches" in e ? (e as TouchEvent).changedTouches[0].clientY : (e as MouseEvent).clientY;
+  const point = "changedTouches" in e ? e.changedTouches[0] : e;
 
   return {
-    x,
-    y,
+    x: point?.clientX ?? 0,
+    y: point?.clientY ?? 0,
     target: e.target,
   };
 };

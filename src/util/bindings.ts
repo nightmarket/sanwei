@@ -15,8 +15,8 @@ export const addUniforms = (
   folder: { addBinding: (...args: any[]) => unknown },
   uniforms: Record<string, UniformBinding>
 ) => {
-  for (const key in uniforms) {
-    const { min = 0, max = 1, label, step = 0.01, value, hideControls = false } = uniforms[key];
+  for (const [key, uniform] of Object.entries(uniforms)) {
+    const { min = 0, max = 1, label, step = 0.01, value, hideControls = false } = uniform;
 
     if (hideControls) {
       continue;
@@ -25,14 +25,14 @@ export const addUniforms = (
     const uniformLabel = label || key;
 
     if (typeof value === "number") {
-      folder.addBinding(uniforms[key], "value", {
+      folder.addBinding(uniform, "value", {
         min,
         max,
         step,
         label: uniformLabel,
       });
     } else {
-      folder.addBinding(uniforms[key], "value", {
+      folder.addBinding(uniform, "value", {
         label: uniformLabel,
       });
     }

@@ -98,7 +98,8 @@ export class TransitionController {
 
   /** Called each frame by SceneManager while a transition is active. */
   render() {
-    const { fromScene, toScene } = this;
+    const fromScene = this.fromScene;
+    const toScene = this.toScene;
     if (!this.isActive || !fromScene || !toScene) return;
 
     const renderer = this.app.renderer;

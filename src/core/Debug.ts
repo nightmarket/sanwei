@@ -20,6 +20,7 @@ export type DebugSetup = (context: {
   pane: Pane;
   inspectorPane: Pane;
   createPane: (options?: PaneOptions) => Pane;
+  // biome-ignore lint/suspicious/noConfusingVoidType: like React's EffectCallback, setups may return nothing or a cleanup.
 }) => void | (() => void);
 
 type SetupEntry = {
