@@ -1,12 +1,14 @@
 import { texture, uniform, uv } from "three/tsl";
 import {
   type Camera,
+  HalfFloatType,
   type Node,
   NodeMaterial,
   NormalBlending,
   QuadMesh,
   RenderTarget,
   type Scene,
+  type TextureDataType,
   Vector2,
 } from "three/webgpu";
 
@@ -26,6 +28,9 @@ export type TrailEffectOptions = {
   renderer: any;
   getScreenSize: () => { x: number; y: number };
   resolutionScale?: number;
+  /** Texel type of the trail targets. Half float by default: the trail is a feedback loop, and
+   * 8-bit targets re-quantize it every frame, which bands smooth seeds and makes them shimmer. */
+  type?: TextureDataType;
   composite: (ctx: TrailCompositeContext) => Node;
   present: (ctx: TrailPresentContext) => Node;
 };
@@ -42,13 +47,13 @@ export class TrailEffect {
   private compositeFn: TrailEffectOptions["composite"];
   private presentFn: TrailEffectOptions["present"];
 
-  private currentFrame = new RenderTarget(1, 1);
-  private compRT = new RenderTarget(1, 1, { depthBuffer: false });
-  private oldRT = new RenderTarget(1, 1, { depthBuffer: false });
+  private currentFrame: RenderTarget;
+  private compRT: RenderTarget;
+  private oldRT: RenderTarget;
 
-  private currentTexNode = texture(this.currentFrame.texture);
-  private historyTexNode = texture(this.oldRT.texture);
-  private trailTexNode = texture(this.oldRT.texture);
+  private currentTexNode: TextureNode;
+  private historyTexNode: TextureNode;
+  private trailTexNode: TextureNode;
   private uTrailScreen = uniform(new Vector2(1, 1));
 
   private compositeMaterial = new NodeMaterial();
@@ -62,6 +67,14 @@ export class TrailEffect {
     this.resolutionScale = options.resolutionScale ?? 0.5;
     this.compositeFn = options.composite;
     this.presentFn = options.present;
+
+    const type = options.type ?? HalfFloatType;
+    this.currentFrame = new RenderTarget(1, 1, { type });
+    this.compRT = new RenderTarget(1, 1, { type, depthBuffer: false });
+    this.oldRT = new RenderTarget(1, 1, { type, depthBuffer: false });
+    this.currentTexNode = texture(this.currentFrame.texture);
+    this.historyTexNode = texture(this.oldRT.texture);
+    this.trailTexNode = texture(this.oldRT.texture);
   }
 
   init() {
