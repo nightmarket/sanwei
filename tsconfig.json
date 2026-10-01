@@ -7,7 +7,7 @@
     "allowJs": true,
     "checkJs": false,
     "strict": true,
-    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true,

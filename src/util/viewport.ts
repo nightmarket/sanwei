@@ -10,11 +10,7 @@ export const getViewportHeight = (depth: number, fov: number) => {
   return 2 * Math.tan(vFOV / 2) * Math.abs(depth);
 };
 
-export const getVisibleDimensionsAtZDepth = (
-  depth: number,
-  camera: ViewportCamera,
-  ignoreCameraOffset = false
-) => {
+export const getVisibleDimensionsAtZDepth = (depth: number, camera: ViewportCamera, ignoreCameraOffset = false) => {
   const relativeDepth = depth - (ignoreCameraOffset ? 0 : camera.position.z);
 
   if (relativeDepth === 0) {
