@@ -1,4 +1,5 @@
 import { Box3, type BufferAttribute, Matrix4, type Mesh, type Object3D, Vector3 } from "three";
+import { ConvexHull } from "three/addons/math/ConvexHull.js";
 
 export type PhysicsBodyOptions = {
   object: Object3D;
@@ -13,16 +14,35 @@ export type PhysicsBodyOptions = {
 const _box = new Box3();
 const _mat = new Matrix4();
 const _center = new Vector3();
-const _vertex = new Vector3();
+/** Below this fraction of the longest extent an axis counts as flat, and Quickhull needs volume. */
+const FLAT_EXTENT_RATIO = 1e-4;
 
 /**
- * A kinematic body with an exact vertex-set collider. The object's unique
- * vertex positions are captured once in local space; each step they are
- * rotated into world space, so the world AABB (and any plane tests) hug the
- * actual rotated silhouette — a spinning torus bounces exactly when its
- * surface reaches the wall, not when a conservative box does.
+ * The convex hull's vertices of a point set. Only those can be extreme along any direction, so
+ * AABBs, plane contacts, and projected-hull SAT come out identical while the per-step loops shrink
+ * (a ~5k-vertex wordmark keeps ~15% of its points).
+ */
+function hullVertices(points: Vector3[]) {
+  const hull = new ConvexHull().setFromPoints(points);
+  const vertices = new Set<Vector3>();
+  for (const face of hull.faces) {
+    let edge = face.edge;
+    do {
+      vertices.add(edge.head().point);
+      edge = edge.next;
+    } while (edge !== face.edge);
+  }
+  return vertices.size >= 4 ? [...vertices] : points;
+}
+
+/**
+ * A kinematic body with an exact vertex-set collider. The object's convex-hull
+ * vertices are captured once in local space; each step they are rotated into
+ * world space, so the world AABB (and any plane tests) hug the actual rotated
+ * silhouette — a spinning torus bounces exactly when its surface reaches the
+ * wall, not when a conservative box does.
  *
- * Cost is O(unique vertices) per step, intended for a handful of showpiece
+ * Cost is O(hull vertices) per step, intended for a handful of showpiece
  * meshes (hundreds to a few thousand vertices), not dense scanned models.
  * Bodies without geometry fall back to a rotated-extents box collider.
  */
@@ -39,7 +59,7 @@ export class PhysicsBody {
   /** Exact world-space AABB of the rotated mesh — refreshed by `updateWorldAABB()` each step. */
   readonly worldAABB = new Box3();
 
-  /** Deduplicated vertex positions in body-local space (xyz triplets). Empty when the object has no geometry. */
+  /** Convex-hull vertex positions in body-local space (xyz triplets); every deduplicated vertex when the mesh is flat. Empty when the object has no geometry. */
   localPoints: Float32Array = new Float32Array(0);
   /** The same points in world space, valid after `updateWorldAABB()` (xyz triplets). */
   worldPoints: Float32Array = new Float32Array(0);
@@ -78,22 +98,27 @@ export class PhysicsBody {
 
     // Collect unique vertex positions in body-local space. Seams and shared
     // corners collapse (a TorusGeometry's ~1.2k entries dedup by ~6%, a box's
-    // 24 down to 8), keeping the per-step transform loop as small as possible.
+    // 24 down to 8), then only the convex hull's vertices are kept.
     const seen = new Set<string>();
-    const points: number[] = [];
+    const unique: Vector3[] = [];
     object.traverse((child) => {
       const position = (child as Mesh).geometry?.getAttribute?.("position");
       if (!position) return;
       for (let i = 0; i < position.count; i++) {
-        _vertex.fromBufferAttribute(position as BufferAttribute, i).applyMatrix4(child.matrixWorld);
-        const key = `${Math.round(_vertex.x * 1e4)},${Math.round(_vertex.y * 1e4)},${Math.round(_vertex.z * 1e4)}`;
+        const vertex = new Vector3()
+          .fromBufferAttribute(position as BufferAttribute, i)
+          .applyMatrix4(child.matrixWorld);
+        const key = `${Math.round(vertex.x * 1e4)},${Math.round(vertex.y * 1e4)},${Math.round(vertex.z * 1e4)}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        points.push(_vertex.x, _vertex.y, _vertex.z);
+        unique.push(vertex);
       }
     });
-    this.localPoints = new Float32Array(points);
-    this.worldPoints = new Float32Array(points.length);
+    const { x, y, z } = this.halfExtents;
+    const hasVolume = Math.min(x, y, z) > Math.max(x, y, z) * FLAT_EXTENT_RATIO;
+    const points = unique.length >= 4 && hasVolume ? hullVertices(unique) : unique;
+    this.localPoints = new Float32Array(points.flatMap((point) => [point.x, point.y, point.z]));
+    this.worldPoints = new Float32Array(this.localPoints.length);
 
     object.position.copy(prevPosition);
     object.quaternion.copy(prevQuaternion);
