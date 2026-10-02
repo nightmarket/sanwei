@@ -49,11 +49,21 @@ Every app shares one `requestAnimationFrame` loop that runs only while something
 await AssetManager.loadModel("/model.glb", { draco: "/libs/draco/", ktx2: "/libs/basis/", renderer });
 ```
 
+### Display P3
+
+Opt in once per app with a side-effect import, ahead of anything that creates a `Color`. Colors convert into the working color space when they're set, so ones made before the switch would read too saturated:
+
+```ts
+import "@nightmarket/sanwei/display-p3";
+```
+
+That makes linear Display P3 the working color space, and `createWebGPURenderer` uploads images as P3 and tags its canvas P3 (WebGPU, or WebGL2 where `drawingBufferColorSpace` exists), falling back to sRGB output elsewhere. A P3 canvas on an sRGB screen is converted by the browser, like CSS colors. Where images can't upload as P3 (WebGL2 without `unpackColorSpace`, i.e. Safari before WebGPU) the working space stays sRGB. Hex colors and sRGB textures look the same; shader color literals now mean P3 values. `setCssColor` from `@nightmarket/sanwei/util/color` also reads `color(display-p3 r g b)`.
+
 ### Debug
 
 Debugging follows tiao's debug level (`NEXT_PUBLIC_DEBUG_LEVEL` / `?debug`). The runtime facade is safe to import normally: the package export resolves to the full lazy runtime in development and a no-op module under the `production` condition, so tiao's pane is absent from production bundles.
 
-`Debug.init()` creates a **Performance** pane (FPS / CPU / GPU / draw calls) and each `SanweiApp` opens its own scene pane. Apps add folders on top via `setup`:
+`Debug.init()` creates a **Performance** pane (FPS / CPU / GPU / draw calls) and each `SanweiApp` opens its own scene pane (`debugPane` overrides its title, order, …). `setup` callbacks draw into a separate host pane, configured with `pane`:
 
 ```ts
 import { Debug } from "@nightmarket/sanwei/debug-runtime";
@@ -62,9 +72,11 @@ const app = await createSanweiApp({
   name: "main",
   canvas,
   renderer,
+  debugPane: { title: "Main Canvas" },
   initDebug: () =>
     Debug.init({
       renderer,
+      pane: { title: "General" },
       setup: ({ pane }) => {
         const folder = pane.addFolder({ title: "My Controls" });
         return () => folder.dispose();
@@ -89,6 +101,7 @@ const dispose = Debug.setup(({ pane }) => {
 | `@nightmarket/sanwei` | Renderer-agnostic runtime (`RAF`, `Mouse`, `Input`, `Device`, `AssetManager`, managers, constants) |
 | `@nightmarket/sanwei/three` | WebGL backend: root runtime + `SanweiApp`, `BaseThreeScene`, `Post`, `TransitionController` |
 | `@nightmarket/sanwei/three-webgpu` | WebGPU backend: root runtime + `SanweiApp`, `BaseThreeWebGPUScene`, `createWebGPURenderer`, `TrailEffect`, `TransitionController` |
+| `@nightmarket/sanwei/display-p3` | Side-effect opt-in to a Display P3 working color space and canvas |
 | `@nightmarket/sanwei/physics` | Light kinematic physics for floating showpiece objects |
 | `@nightmarket/sanwei/constants` | Shared constants and gates (`isDebugEnabled()`, pass types, …) |
 | `@nightmarket/sanwei/debug` | `DebugContext` helper types (no runtime) |

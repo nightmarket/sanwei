@@ -14,7 +14,7 @@ export function attachBoundsDebug(
   world: PhysicsWorld,
   scene: Scene,
   { pane, debug }: DebugContext,
-  { title = "🧊 Physics", color = 0x00ff88 }: { title?: string; color?: number } = {}
+  { title = "Physics", color = 0x00ff88 }: { title?: string; color?: number } = {}
 ) {
   const folder = pane.addFolder({ title, expanded: false });
   debug.register(title, folder);

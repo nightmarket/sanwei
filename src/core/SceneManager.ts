@@ -33,7 +33,7 @@ export class SceneManager {
     }
 
     this.debugFolder = context.pane.addFolder({
-      title: "🎬 Scenes",
+      title: "Scenes",
       expanded: false,
     });
     context.debug.register(this.app.name ? `SceneManager:${this.app.name}` : "SceneManager", this.debugFolder);

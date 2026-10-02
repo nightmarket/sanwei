@@ -14,7 +14,12 @@ export {
   type TickDesire,
 } from "../core/SanweiApp";
 export * from "../index";
-export { type CreateWebGPURendererOptions, createWebGPURenderer, hasGpuRendererSupport } from "./createWebGPURenderer";
+export {
+  type CreateWebGPURendererOptions,
+  createWebGPURenderer,
+  hasGpuRendererSupport,
+  setOutputColorSpace,
+} from "./createWebGPURenderer";
 export { createAppUniforms, GlobalUniforms } from "./GlobalUniforms";
 export {
   type TrailCompositeContext,

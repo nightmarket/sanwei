@@ -8,7 +8,6 @@ import {
   NoToneMapping,
   PCFShadowMap,
   ReinhardToneMapping,
-  SRGBColorSpace,
 } from "three";
 import { isDebugEnabled, SHADOW_MAP_TYPES, TONE_MAPPING_TYPES } from "./constants";
 import type { DebugContext } from "./debugHelpers";
@@ -34,22 +33,29 @@ const SHADOW_MAPS: Record<string, number> = {
 const optionsFor = (types: Record<string, string>) =>
   Object.fromEntries(Object.values(types).map((type) => [type, type]));
 
+const DEFAULT_SETTINGS = {
+  toneMappingExposure: 0.3,
+  toneMapping: TONE_MAPPING_TYPES.ACESFilmic,
+  shadowMapType: SHADOW_MAP_TYPES.PCFSoft,
+  shadowMapEnabled: true,
+};
+
+export type RendererSettings = typeof DEFAULT_SETTINGS;
+
 /** Per-app renderer wrapper: owns the canvas/renderer pair, sizing, and renderer debug bindings. */
 export class RendererManager {
   canvas: HTMLCanvasElement | null = null;
   renderer: any = null;
 
-  private settings = {
-    toneMappingExposure: 0.3,
-    toneMapping: TONE_MAPPING_TYPES.ACESFilmic,
-    shadowMapType: SHADOW_MAP_TYPES.PCFSoft,
-    shadowMapEnabled: true,
-  };
+  private settings: RendererSettings;
 
   constructor(
     private uniforms: AppUniformsShape,
-    private name = ""
-  ) {}
+    private name = "",
+    settings: Partial<RendererSettings> = {}
+  ) {
+    this.settings = { ...DEFAULT_SETTINGS, ...settings };
+  }
 
   init({ canvas, renderer }: { canvas: HTMLCanvasElement; renderer: any }) {
     this.canvas = canvas;
@@ -63,7 +69,6 @@ export class RendererManager {
         console.error(gl, program, vs, fs);
     }
 
-    this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = TONE_MAPPINGS[this.settings.toneMapping];
     this.renderer.toneMappingExposure = this.settings.toneMappingExposure;
     this.renderer.shadowMap.type = SHADOW_MAPS[this.settings.shadowMapType];
@@ -74,7 +79,7 @@ export class RendererManager {
     if (!inspectorPane) return;
 
     const folder = inspectorPane.addFolder({
-      title: "🖼️ Renderer",
+      title: "Renderer",
       expanded: false,
     });
     debug.register(this.name ? `RendererManager:${this.name}` : "RendererManager", folder);
@@ -103,6 +108,7 @@ export class RendererManager {
       .addBinding(this.settings, "shadowMapType", {
         label: "Shadow Map Type",
         options: optionsFor(SHADOW_MAP_TYPES),
+        showIf: () => this.settings.shadowMapEnabled,
       })
       .on("change", (ev: any) => {
         this.renderer.shadowMap.type = SHADOW_MAPS[ev.value];
