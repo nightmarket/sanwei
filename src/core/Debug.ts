@@ -6,6 +6,8 @@ import { isDebugEnabled, NO_RAYCAST_CLASS } from "./constants";
 export type DebugInitOptions = {
   renderer?: any;
   setup?: DebugSetup;
+  /** Overrides for the host pane `setup` callbacks draw into. */
+  pane?: PaneOptions;
 };
 
 export type DebugSetupContext = {
@@ -63,7 +65,7 @@ export class DebugClass {
     }
   }
 
-  async init({ renderer, setup }: DebugInitOptions = {}) {
+  async init({ renderer, setup, pane }: DebugInitOptions = {}) {
     if (!isDebugEnabled()) return null;
     if (renderer) this.renderer = renderer;
 
@@ -77,7 +79,7 @@ export class DebugClass {
     }
 
     if (setup) {
-      this.ensureInspectorPane();
+      this.ensureInspectorPane(pane);
       this.setup(setup);
     }
     this.mountSetups();
@@ -127,12 +129,13 @@ export class DebugClass {
     return pane;
   }
 
-  private ensureInspectorPane() {
+  private ensureInspectorPane(options?: PaneOptions) {
     if (this.inspectorPane) return this.inspectorPane;
 
     const pane = this.createPane({
       id: "debugger-inspector",
       title: "Inspector",
+      ...options,
     });
     this.inspectorPane = pane;
     this.pane = pane;

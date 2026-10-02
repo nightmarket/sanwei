@@ -1,6 +1,6 @@
 {
   "name": "@nightmarket/sanwei",
-  "version": "0.6.2",
+  "version": "0.6.4",
   "description": "Three.js / WebGPU scene engine — managers, postprocessing, and debug tooling.",
   "keywords": [
     "three",
@@ -37,11 +37,14 @@
   "types": "./src/index.ts",
   "sideEffects": [
     "./src/three/index.ts",
-    "./src/three-webgpu/index.ts"
+    "./src/three-webgpu/index.ts",
+    "./src/core/displayP3.ts",
+    "./src/util/color.ts"
   ],
   "exports": {
     ".": "./src/index.ts",
     "./constants": "./src/core/constants.ts",
+    "./display-p3": "./src/core/displayP3.ts",
     "./debug": "./src/core/debugHelpers.ts",
     "./debug-runtime": {
       "types": "./src/core/Debug.ts",

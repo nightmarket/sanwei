@@ -1,3 +1,4 @@
+import type { PaneOptions } from "@nightmarket/tiao/core";
 import { Accelerometer } from "./Accelerometer";
 import { AssetManager } from "./AssetManager";
 import { CameraManager } from "./CameraManager";
@@ -7,7 +8,7 @@ import { type AppUniformsShape, createAppUniforms, getGlobalUniforms } from "./g
 import { Input } from "./Input";
 import { Mouse } from "./Mouse";
 import { RAF } from "./RAF";
-import { RendererManager } from "./RendererManager";
+import { RendererManager, type RendererSettings } from "./RendererManager";
 import { SceneManager } from "./SceneManager";
 
 const GLOBAL_TICK_ID = "sanwei:globals";
@@ -49,7 +50,7 @@ export type TickDesire = "stopped" | "running";
 export type RectMode = "static" | "live";
 
 export type SanweiAppOptions = {
-  /** Unique per canvas — used as the RAF subscription id and debug pane title. */
+  /** Unique per canvas — used as the RAF subscription id and default debug pane id/title. */
   name: string;
   canvas: HTMLCanvasElement;
   /** A constructed (and, for WebGPU, initialized) renderer. */
@@ -60,6 +61,10 @@ export type SanweiAppOptions = {
   initDebug?: () => Promise<DebugInitResult | null>;
   /** Reuse an existing debug host (e.g. the one the main app created). */
   debugContext?: DebugInitResult | null;
+  /** Overrides for this app's debug pane (default id `debugger-<name>`, title from `name`). */
+  debugPane?: PaneOptions;
+  /** Initial renderer settings; the Renderer debug folder edits these. */
+  rendererSettings?: Partial<RendererSettings>;
   /**
    * When true, unsubscribe from RAF while the canvas is offscreen or the tab is hidden.
    * Explicit `stop()` still wins. Default false.
@@ -105,6 +110,7 @@ export class SanweiApp {
   private fps: number | null;
   private initDebugFn?: () => Promise<DebugInitResult | null>;
   private sharedDebugContext: DebugInitResult | null = null;
+  private debugPaneOptions: PaneOptions;
   private ownsDebugContext = false;
   private appPane: DebugContext["pane"] | null = null;
   private desire: TickDesire = "stopped";
@@ -124,11 +130,12 @@ export class SanweiApp {
     this.fps = options.fps ?? null;
     this.initDebugFn = options.initDebug;
     this.sharedDebugContext = options.debugContext ?? null;
+    this.debugPaneOptions = options.debugPane ?? {};
     this.pauseWhenHidden = options.pauseWhenHidden ?? false;
     this.rectMode = options.rectMode ?? "live";
 
     this.uniforms = createAppUniforms();
-    this.rendererManager = new RendererManager(this.uniforms, this.name);
+    this.rendererManager = new RendererManager(this.uniforms, this.name, options.rendererSettings);
     this.rendererManager.renderer = options.renderer;
     this.scenes = new SceneManager(this);
     this.cameras = new CameraManager(this);
@@ -328,15 +335,11 @@ export class SanweiApp {
 
   private bindDebugPane(shared: DebugInitResult): DebugContext {
     this.ownsDebugContext = !this.sharedDebugContext;
-    const title = paneTitle(this.name);
-    const pane =
-      this.ownsDebugContext && shared.pane
-        ? shared.pane
-        : shared.debug.createPane({
-            id: `debugger-${this.name}`,
-            title,
-          });
-    pane.title = title;
+    const pane = shared.debug.createPane({
+      id: `debugger-${this.name}`,
+      title: paneTitle(this.name),
+      ...this.debugPaneOptions,
+    });
     this.appPane = pane;
     return {
       debug: shared.debug,
