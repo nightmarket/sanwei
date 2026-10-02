@@ -29,6 +29,8 @@ export type TrailPresentContext = {
   trail: TextureNode[];
   currentTex: TextureNode;
   currentDepthTex: TextureNode;
+  /** Size of the trail targets in texels. */
+  screenSize: ReturnType<typeof uniform>;
 };
 
 export type TrailEffectOptions = {
@@ -43,6 +45,10 @@ export type TrailEffectOptions = {
   layers?: number;
   composite: (ctx: TrailCompositeContext, layer: number) => Node;
   present: (ctx: TrailPresentContext) => Node;
+  /** Fragment depth for the present pass. When set, the trail is depth-tested against the bound
+   * depth buffer (e.g. the scene just drawn into the same target), so whatever occludes it cuts
+   * it off at that target's resolution and antialiasing rather than the trail's. */
+  presentDepth?: (ctx: TrailPresentContext) => Node;
 };
 
 type TrailLayer = {
@@ -68,6 +74,7 @@ export class TrailEffect {
   private resolutionScale: number;
   private compositeFn: TrailEffectOptions["composite"];
   private presentFn: TrailEffectOptions["present"];
+  private presentDepthFn: TrailEffectOptions["presentDepth"];
 
   private currentFrame: RenderTarget;
   private currentTexNode: TextureNode;
@@ -84,6 +91,7 @@ export class TrailEffect {
     this.resolutionScale = options.resolutionScale ?? 0.5;
     this.compositeFn = options.composite;
     this.presentFn = options.present;
+    this.presentDepthFn = options.presentDepth;
 
     const type = options.type ?? HalfFloatType;
     const depthTexture = new DepthTexture(1, 1);
@@ -132,16 +140,19 @@ export class TrailEffect {
     });
 
     const { presentMaterial } = this;
-    presentMaterial.name = "TrailEffect.Present";
-    presentMaterial.transparent = true;
-    presentMaterial.depthWrite = false;
-    presentMaterial.depthTest = false;
-    presentMaterial.blending = NormalBlending;
-    presentMaterial.fragmentNode = this.presentFn({
+    const presentContext = {
       trail: this.layers.map((layer) => layer.trail),
       currentTex: this.currentTexNode,
       currentDepthTex: this.currentDepthTexNode,
-    });
+      screenSize: this.uTrailScreen,
+    };
+    presentMaterial.name = "TrailEffect.Present";
+    presentMaterial.transparent = true;
+    presentMaterial.depthWrite = false;
+    presentMaterial.depthTest = this.presentDepthFn !== undefined;
+    presentMaterial.blending = NormalBlending;
+    presentMaterial.fragmentNode = this.presentFn(presentContext);
+    if (this.presentDepthFn) presentMaterial.depthNode = this.presentDepthFn(presentContext);
     this.presentQuad.name = "TrailEffectPresent";
 
     this.resize();
