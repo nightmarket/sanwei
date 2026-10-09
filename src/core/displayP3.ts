@@ -1,7 +1,9 @@
 // Opt-in, side-effect entry: `import "@nightmarket/sanwei/display-p3"` makes linear Display P3 the
-// working color space, so colors and shader literals can reach past sRGB, and `createWebGPURenderer`
-// tags its canvas P3 wherever the browser can (sRGB output otherwise). A `Color` converts into the
-// working space when it's set, so this must be imported before anything creates one.
+// working color space, so colors and shader literals can reach past sRGB. Output is a separate
+// choice: `createWebGPURenderer` presents Display P3 only when the context can and the display
+// matches `(color-gamut: p3)`, and sRGB otherwise — the same split as the three.js wide-gamut
+// example. A `Color` converts into the working space when it's set, so this must be imported
+// before anything creates one.
 //
 // sRGB images only upload as P3 through WebGPU or WebGL2's `unpackColorSpace` (missing in Safari);
 // anywhere else they would read oversaturated, so the working space stays sRGB there.

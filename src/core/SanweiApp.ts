@@ -7,14 +7,13 @@ import type { DebugContext, DebugInitResult } from "./debugHelpers";
 import { type AppUniformsShape, createAppUniforms, getGlobalUniforms } from "./globalUniformsAdapter";
 import { Input } from "./Input";
 import { Mouse } from "./Mouse";
-import { RAF } from "./RAF";
+import { type FrameRate, FrameState, RAF, RAF_ORDER } from "./RAF";
 import { RendererManager, type RendererSettings } from "./RendererManager";
 import { SceneManager } from "./SceneManager";
 
-const GLOBAL_TICK_ID = "sanwei:globals";
-
 let globalsReady: Promise<void> | null = null;
 let tickingApps = 0;
+let releaseGlobals: (() => void) | null = null;
 
 /**
  * One-time process-wide setup shared by every app: the RAF loop, device/GPU
@@ -32,31 +31,34 @@ function ensureGlobals() {
   return globalsReady;
 }
 
-function tickGlobals() {
-  Mouse.update();
-  getGlobalUniforms().uTime.value += RAF.delta;
+function tickGlobals(frame: FrameState) {
+  Mouse.update(frame);
+  getGlobalUniforms().uTime.value += frame.delta;
 }
 
 /** Shared per-frame work runs only while some app ticks, so an idle page schedules no frames. */
 function retainGlobalTick() {
-  if (tickingApps++ === 0) RAF.subscribe(GLOBAL_TICK_ID, tickGlobals);
+  if (tickingApps++ > 0) return;
+  releaseGlobals = RAF.subscribe(tickGlobals, { order: RAF_ORDER.INPUT, label: "sanwei:globals" });
 }
 
 function releaseGlobalTick() {
-  if (--tickingApps === 0) RAF.unsubscribe(GLOBAL_TICK_ID);
+  if (--tickingApps > 0) return;
+  releaseGlobals?.();
+  releaseGlobals = null;
 }
 
 export type TickDesire = "stopped" | "running";
 export type RectMode = "static" | "live";
 
 export type SanweiAppOptions = {
-  /** Unique per canvas — used as the RAF subscription id and default debug pane id/title. */
+  /** Unique per canvas — the RAF profiler label and the default debug pane id/title. */
   name: string;
   canvas: HTMLCanvasElement;
   /** A constructed (and, for WebGPU, initialized) renderer. */
   renderer: any;
   /** Optional frame-rate cap for this app's update loop. */
-  fps?: number | null;
+  fps?: FrameRate | null;
   /** Creates (or returns) the shared debug host. Scene panes are created per app. */
   initDebug?: () => Promise<DebugInitResult | null>;
   /** Reuse an existing debug host (e.g. the one the main app created). */
@@ -102,12 +104,16 @@ export class SanweiApp {
   readonly scenes: SceneManager;
   readonly cameras: CameraManager;
   readonly pointer: AppPointer = { ndc: { x: 0, y: 0 }, isOver: false };
+  /** This app's timing for the tick in progress (and the last one, between ticks). Scenes read it for
+   * delta-scaled steps; all zeros until the first tick, so renders outside the loop stand still. */
+  readonly frame = new FrameState();
   /** Resolves when the app is fully initialized (also returned by `createSanweiApp`). */
   ready: Promise<void>;
 
   debugContext: DebugContext | null = null;
 
-  private fps: number | null;
+  private fps: FrameRate | null;
+  private unsubscribeTick: (() => void) | null = null;
   private initDebugFn?: () => Promise<DebugInitResult | null>;
   private sharedDebugContext: DebugInitResult | null = null;
   private debugPaneOptions: PaneOptions;
@@ -226,7 +232,8 @@ export class SanweiApp {
     this.syncTick();
   }
 
-  update = () => {
+  update = (frame: FrameState) => {
+    this.frame.copy(frame);
     if (!this.hasSize) return;
     this.updatePointer();
     this.scenes.render();
@@ -247,10 +254,11 @@ export class SanweiApp {
     this.ticking = shouldTick;
     if (shouldTick) {
       retainGlobalTick();
-      RAF.subscribe(this.name, this.update, this.fps);
+      this.unsubscribeTick = RAF.subscribe(this.update, { fps: this.fps, order: RAF_ORDER.SCENE, label: this.name });
       this.renderer._animation?.start();
     } else {
-      RAF.unsubscribe(this.name);
+      this.unsubscribeTick?.();
+      this.unsubscribeTick = null;
       releaseGlobalTick();
       this.renderer._animation?.stop();
     }

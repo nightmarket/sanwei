@@ -41,6 +41,14 @@ import { Mouse, RAF } from "@nightmarket/sanwei";
 
 Every app shares one `requestAnimationFrame` loop that runs only while something is subscribed. `app.start()` / `app.stop()` subscribe the app; `pauseWhenHidden` also stops it while the canvas is offscreen or the tab is hidden. The shared per-frame work (mouse easing, `GlobalUniforms.uTime`) runs only while at least one app ticks, and WebGPURenderer's private node-frame loop is paused with its app, so an idle page schedules no frames.
 
+```ts
+const unsubscribe = RAF.subscribe((frame) => step(frame.delta), { order: RAF_ORDER.UI, fps: 30, label: "minimap" });
+```
+
+Each callback gets a `FrameState`: `time` (loop ms, excluding pauses), `delta` (seconds since this callback last ran, so a throttled one gets its own interval), `frames` (that span in `TUNED_FPS` = 120 Hz frames), `frame`, `lerpFactor(factor)` and `budget()` (ms left before the frame overruns the display interval, for optional work). The instance is shared, so copy it to keep values past the callback; each app does, and scenes read `this.app.frame`. Callbacks run by `order` (`RAF_ORDER`: input, scroll, scenes, UI), throttle to an absolute `fps` or a share of the display (`"50%"`), and a throwing one is logged once without stopping the loop. `RAF.pause()` / `RAF.play()` freeze everything; with the debug pane open, its perf panel graphs the loop and each callback's cost.
+
+Per-frame tuning is for one frame at `TUNED_FPS`: scale steps by `frame.frames` and compound lerp factors with `frame.lerpFactor`. `Mouse` eases and reports `scroll.velocity` this way, and `TrailEffect.update` takes the frame count for its per-step feedback, so both read the same at any refresh rate.
+
 ### Assets
 
 `AssetManager.loadModel(url)` loads plain glTF/GLB. Compressed assets opt into their decoders, so plain models never download them:
@@ -57,7 +65,7 @@ Opt in once per app with a side-effect import, ahead of anything that creates a 
 import "@nightmarket/sanwei/display-p3";
 ```
 
-That makes linear Display P3 the working color space, and `createWebGPURenderer` uploads images as P3 and tags its canvas P3 (WebGPU, or WebGL2 where `drawingBufferColorSpace` exists), falling back to sRGB output elsewhere. A P3 canvas on an sRGB screen is converted by the browser, like CSS colors. Where images can't upload as P3 (WebGL2 without `unpackColorSpace`, i.e. Safari before WebGPU) the working space stays sRGB. Hex colors and sRGB textures look the same; shader color literals now mean P3 values. `setCssColor` from `@nightmarket/sanwei/util/color` also reads `color(display-p3 r g b)`.
+That makes linear Display P3 the working color space, and `createWebGPURenderer` uploads images as P3 (WebGPU, or WebGL2 `unpackColorSpace`). Like the three.js wide-gamut example, the canvas and `outputColorSpace` are Display P3 only when the context can present it (`WebGL.isColorSpaceAvailable`) and `(color-gamut: p3)` matches; otherwise output is sRGB, so an sRGB screen is gamut-mapped in the renderer. Moving the window onto another screen follows that media query. `setOutputColorSpace` pins a preview until the next gamut change. Where images can't upload as P3 (WebGL2 without `unpackColorSpace`, i.e. Safari before WebGPU) the working space stays sRGB. Hex colors and sRGB textures look the same; shader color literals now mean P3 values. `setCssColor` from `@nightmarket/sanwei/util/color` also reads `color(display-p3 r g b)`.
 
 ### Debug
 

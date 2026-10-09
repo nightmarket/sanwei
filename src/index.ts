@@ -13,7 +13,15 @@ export * from "./core/constants";
 export { Device, type GpuTier, type QualityPreset } from "./core/Device";
 export { Input } from "./core/Input";
 export { Mouse, type MouseDragState, type MouseScrollState, SCROLL_DIRECTION } from "./core/Mouse";
-export { RAF } from "./core/RAF";
+export {
+  type FrameLoopEntry,
+  type FrameRate,
+  FrameState,
+  RAF,
+  RAF_ORDER,
+  type SubscribeOptions,
+  TUNED_FPS,
+} from "./core/RAF";
 export { RendererManager } from "./core/RendererManager";
 export { SceneManager } from "./core/SceneManager";
 export { Sound } from "./core/Sound";

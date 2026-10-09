@@ -2,6 +2,7 @@ import normalizeWheel from "normalize-wheel-es";
 import { MathUtils, Vector2 } from "three";
 import { events, getPos } from "../util/responsive";
 import { NO_RAYCAST_CLASS } from "./constants";
+import type { FrameState } from "./RAF";
 
 /** Cap per wheel event so one mouse-wheel tick (~100-120px) doesn't jump `scroll.target` much
  * farther than a trackpad swipe (~1-20px) would. The `scroll.target → scroll.current` lerp in
@@ -294,27 +295,32 @@ class MouseClass {
     this.scrollDirection.set(SCROLL_DIRECTION.NONE, SCROLL_DIRECTION.NONE);
   };
 
-  update = () => {
+  /** Momentum, friction, and the scroll ease are per `TUNED_FPS` frame, scaled by `frame.frames`. */
+  update = (frame: FrameState) => {
+    const { frames } = frame;
+    if (frames === 0) return;
+
     if (!this.drag.active) {
       if (this.drag.momentumVelocity.lengthSq() > DRAG_MOMENTUM_STOP_THRESHOLD_SQ) {
-        this.drag.momentumVelocity.multiplyScalar(DRAG_MOMENTUM_FRICTION);
-        this.scroll.target.add(this.drag.momentumVelocity);
+        this.drag.momentumVelocity.multiplyScalar(DRAG_MOMENTUM_FRICTION ** frames);
+        this.scroll.target.addScaledVector(this.drag.momentumVelocity, frames);
       } else {
         this.drag.momentumVelocity.set(0, 0);
       }
 
       if (this.wheelMomentumVelocity.lengthSq() > WHEEL_MOMENTUM_STOP_THRESHOLD_SQ) {
-        this.wheelMomentumVelocity.multiplyScalar(WHEEL_MOMENTUM_FRICTION);
-        this.scroll.target.add(this.wheelMomentumVelocity);
+        this.wheelMomentumVelocity.multiplyScalar(WHEEL_MOMENTUM_FRICTION ** frames);
+        this.scroll.target.addScaledVector(this.wheelMomentumVelocity, frames);
       } else {
         this.wheelMomentumVelocity.set(0, 0);
       }
     }
 
-    this.scroll.current.lerp(this.scroll.target, this.scroll.ease);
+    this.scroll.current.lerp(this.scroll.target, frame.lerpFactor(this.scroll.ease));
 
-    const scrollDeltaX = this.scroll.current.x - this.scroll.last.x;
-    const scrollDeltaY = this.scroll.current.y - this.scroll.last.y;
+    // Per tuned frame, so direction thresholds and `scroll.velocity` read the same at any refresh rate.
+    const scrollDeltaX = (this.scroll.current.x - this.scroll.last.x) / frames;
+    const scrollDeltaY = (this.scroll.current.y - this.scroll.last.y) / frames;
 
     if (scrollDeltaX > 0.01) {
       this.scrollDirection.x = SCROLL_DIRECTION.RIGHT;

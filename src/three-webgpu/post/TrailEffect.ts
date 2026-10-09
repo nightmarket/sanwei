@@ -22,6 +22,9 @@ export type TrailCompositeContext = {
   /** Previous output of every layer, by layer index. */
   history: TextureNode[];
   screenSize: ReturnType<typeof uniform>;
+  /** The `frames` passed to `update`. Per-step feedback (decay, advection) compounds by it so the
+   * trail reads the same at any refresh rate. */
+  frames: ReturnType<typeof uniform>;
 };
 
 export type TrailPresentContext = {
@@ -81,6 +84,7 @@ export class TrailEffect {
   private currentDepthTexNode: TextureNode;
   private layers: TrailLayer[];
   private uTrailScreen = uniform(new Vector2(1, 1));
+  private uFrames = uniform(1);
 
   private presentMaterial = new NodeMaterial();
   private presentQuad = new QuadMesh(this.presentMaterial);
@@ -133,6 +137,7 @@ export class TrailEffect {
           currentDepthTex: this.currentDepthTexNode,
           history,
           screenSize: this.uTrailScreen,
+          frames: this.uFrames,
         },
         i
       );
@@ -168,9 +173,11 @@ export class TrailEffect {
     this.renderer.setRenderTarget(previous);
   }
 
-  update(scene: Scene, camera: Camera) {
+  /** `frames` is the calling app's `frame.frames`. */
+  update(scene: Scene, camera: Camera, frames: number) {
     const active = this.layers.slice(0, this.activeLayers);
     for (const layer of this.layers) layer.history.value = layer.old.texture;
+    this.uFrames.value = frames;
 
     this.renderer.setRenderTarget(this.currentFrame);
     this.renderer.clear();
