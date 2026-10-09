@@ -1,6 +1,6 @@
 {
   "name": "@nightmarket/sanwei",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Three.js / WebGPU scene engine — managers, postprocessing, and debug tooling.",
   "keywords": [
     "three",

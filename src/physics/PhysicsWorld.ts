@@ -33,6 +33,8 @@ const PLANE_XY_EPSILON = 1e-4;
 
 const _quat = new Quaternion();
 const _axis = new Vector3();
+/** The deepest overlap `overlap2D` found: its depth and unit normal from the first hull toward the second. */
+const _contact = { depth: 0, nx: 0, ny: 0 };
 
 function buildConvexHull2D(points: Float32Array): number[] {
   const sorted = Array.from({ length: points.length / 3 }, (_, index) => index);
@@ -76,11 +78,77 @@ function buildConvexHull2D(points: Float32Array): number[] {
   return lower.concat(upper);
 }
 
+/** Narrows `_contact` to the shallowest overlap along `axisHull`'s edge normals; false when one of them
+ * separates the hulls. */
+function testAxes(
+  axisHull: number[],
+  axisPoints: Float32Array,
+  hullA: number[],
+  pointsA: Float32Array,
+  hullB: number[],
+  pointsB: Float32Array
+) {
+  for (let i = 0; i < axisHull.length; i++) {
+    const current = axisHull[i]!;
+    const next = axisHull[(i + 1) % axisHull.length]!;
+    const edgeX = axisPoints[next * 3]! - axisPoints[current * 3]!;
+    const edgeY = axisPoints[next * 3 + 1]! - axisPoints[current * 3 + 1]!;
+    const axisLength = Math.hypot(edgeX, edgeY);
+    if (axisLength === 0) continue;
+
+    let axisX = -edgeY / axisLength;
+    let axisY = edgeX / axisLength;
+    let minA = Number.POSITIVE_INFINITY;
+    let maxA = Number.NEGATIVE_INFINITY;
+    let minB = Number.POSITIVE_INFINITY;
+    let maxB = Number.NEGATIVE_INFINITY;
+
+    for (const index of hullA) {
+      const projection = pointsA[index * 3]! * axisX + pointsA[index * 3 + 1]! * axisY;
+      minA = Math.min(minA, projection);
+      maxA = Math.max(maxA, projection);
+    }
+    for (const index of hullB) {
+      const projection = pointsB[index * 3]! * axisX + pointsB[index * 3 + 1]! * axisY;
+      minB = Math.min(minB, projection);
+      maxB = Math.max(maxB, projection);
+    }
+
+    if (maxA <= minB || maxB <= minA) return false;
+
+    const positiveDepth = maxA - minB;
+    const negativeDepth = maxB - minA;
+    let depth = positiveDepth;
+    if (negativeDepth < positiveDepth) {
+      axisX = -axisX;
+      axisY = -axisY;
+      depth = negativeDepth;
+    }
+
+    if (depth < _contact.depth) {
+      _contact.depth = depth;
+      _contact.nx = axisX;
+      _contact.ny = axisY;
+    }
+  }
+  return true;
+}
+
+/** Separating-axis test of two projected convex hulls; on overlap, `_contact` holds the minimum
+ * translation. */
+function overlap2D(hullA: number[], pointsA: Float32Array, hullB: number[], pointsB: Float32Array) {
+  _contact.depth = Number.POSITIVE_INFINITY;
+  return (
+    testAxes(hullA, pointsA, hullA, pointsA, hullB, pointsB) && testAxes(hullB, pointsB, hullA, pointsA, hullB, pointsB)
+  );
+}
+
 /**
  * Light kinematic physics for floating showpiece objects: drift + spin
  * integration, exact vertex-set wall bounces, and O(n²) equal-mass body
- * collisions. Locked-z pairs use projected convex-hull SAT after an AABB
- * broadphase; unrestricted 3D pairs use AABB resolution. Not for stacks or joints.
+ * collisions. Locked-z pairs run projected SAT between each body's convex pieces
+ * (its hull, or the `parts` it was given) after an AABB broadphase, resolving the
+ * deepest overlap; unrestricted 3D pairs use AABB resolution. Not for stacks or joints.
  */
 export class PhysicsWorld {
   bodies: PhysicsBody[] = [];
@@ -312,62 +380,38 @@ export class PhysicsWorld {
   }
 
   private resolveBodyPair2D(a: PhysicsBody, b: PhysicsBody) {
-    const hullA = buildConvexHull2D(a.worldPoints);
-    const hullB = buildConvexHull2D(b.worldPoints);
-    if (hullA.length < 2 || hullB.length < 2) return;
-
+    // Each piece's projected hull is built at most once, and only if its bounds reach the other body.
+    const hullsA: (number[] | undefined)[] = [];
+    const hullsB: (number[] | undefined)[] = [];
+    let minDepth = 0;
     let nx = 0;
     let ny = 0;
-    let minDepth = Number.POSITIVE_INFINITY;
 
-    const testAxes = (axisHull: number[], axisPoints: Float32Array) => {
-      for (let i = 0; i < axisHull.length; i++) {
-        const current = axisHull[i]!;
-        const next = axisHull[(i + 1) % axisHull.length]!;
-        const edgeX = axisPoints[next * 3]! - axisPoints[current * 3]!;
-        const edgeY = axisPoints[next * 3 + 1]! - axisPoints[current * 3 + 1]!;
-        const axisLength = Math.hypot(edgeX, edgeY);
-        if (axisLength === 0) continue;
-
-        let axisX = -edgeY / axisLength;
-        let axisY = edgeX / axisLength;
-        let minA = Number.POSITIVE_INFINITY;
-        let maxA = Number.NEGATIVE_INFINITY;
-        let minB = Number.POSITIVE_INFINITY;
-        let maxB = Number.NEGATIVE_INFINITY;
-
-        for (const index of hullA) {
-          const projection = a.worldPoints[index * 3]! * axisX + a.worldPoints[index * 3 + 1]! * axisY;
-          minA = Math.min(minA, projection);
-          maxA = Math.max(maxA, projection);
+    for (let i = 0; i < a.worldParts.length; i++) {
+      const boundsA = a.worldPartBounds[i]!;
+      for (let j = 0; j < b.worldParts.length; j++) {
+        const boundsB = b.worldPartBounds[j]!;
+        if (
+          boundsA.max.x <= boundsB.min.x ||
+          boundsB.max.x <= boundsA.min.x ||
+          boundsA.max.y <= boundsB.min.y ||
+          boundsB.max.y <= boundsA.min.y
+        ) {
+          continue;
         }
-        for (const index of hullB) {
-          const projection = b.worldPoints[index * 3]! * axisX + b.worldPoints[index * 3 + 1]! * axisY;
-          minB = Math.min(minB, projection);
-          maxB = Math.max(maxB, projection);
-        }
-
-        if (maxA <= minB || maxB <= minA) return false;
-
-        const positiveDepth = maxA - minB;
-        const negativeDepth = maxB - minA;
-        let depth = positiveDepth;
-        if (negativeDepth < positiveDepth) {
-          axisX = -axisX;
-          axisY = -axisY;
-          depth = negativeDepth;
-        }
-
-        if (depth < minDepth) {
-          minDepth = depth;
-          nx = axisX;
-          ny = axisY;
+        const pointsA = a.worldParts[i]!;
+        const pointsB = b.worldParts[j]!;
+        const hullA = (hullsA[i] ??= buildConvexHull2D(pointsA));
+        const hullB = (hullsB[j] ??= buildConvexHull2D(pointsB));
+        if (hullA.length < 2 || hullB.length < 2) continue;
+        if (overlap2D(hullA, pointsA, hullB, pointsB) && _contact.depth > minDepth) {
+          minDepth = _contact.depth;
+          nx = _contact.nx;
+          ny = _contact.ny;
         }
       }
-      return true;
-    };
-
-    if (!testAxes(hullA, a.worldPoints) || !testAxes(hullB, b.worldPoints)) return;
+    }
+    if (minDepth === 0) return;
 
     const pushX = (nx * minDepth) / 2;
     const pushY = (ny * minDepth) / 2;

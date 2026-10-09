@@ -9,11 +9,66 @@ export type PhysicsBodyOptions = {
   angularVelocity?: Vector3;
   /** Energy kept on bounce (1 = perfectly elastic). */
   restitution?: number;
+  /** Convex pieces of a concave shape (e.g. a convex decomposition), as xyz triplets in the object's
+   * local space. Body-body contacts test these instead of the whole convex hull, which would bounce
+   * off the empty space a concave shape leaves inside it. */
+  parts?: Float32Array[];
 };
 
 const _box = new Box3();
 const _mat = new Matrix4();
 const _center = new Vector3();
+const _offset = new Vector3();
+
+/** Rotates, scales, and places `local` into `world` (xyz triplets) as `object` does, and bounds them in
+ * `box`. Same math as `Vector3.applyQuaternion`, expanded. */
+function transformPoints(local: Float32Array, world: Float32Array, object: Object3D, box: Box3) {
+  const { x: qx, y: qy, z: qz, w: qw } = object.quaternion;
+  const { x: px, y: py, z: pz } = object.position;
+  const { x: sx, y: sy, z: sz } = object.scale;
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+
+  for (let i = 0; i < local.length; i += 3) {
+    const vx = local[i]! * sx;
+    const vy = local[i + 1]! * sy;
+    const vz = local[i + 2]! * sz;
+
+    const tx = 2 * (qy * vz - qz * vy);
+    const ty = 2 * (qz * vx - qx * vz);
+    const tz = 2 * (qx * vy - qy * vx);
+    const wx = vx + qw * tx + qy * tz - qz * ty + px;
+    const wy = vy + qw * ty + qz * tx - qx * tz + py;
+    const wz = vz + qw * tz + qx * ty - qy * tx + pz;
+
+    world[i] = wx;
+    world[i + 1] = wy;
+    world[i + 2] = wz;
+
+    if (wx < minX) minX = wx;
+    if (wx > maxX) maxX = wx;
+    if (wy < minY) minY = wy;
+    if (wy > maxY) maxY = wy;
+    if (wz < minZ) minZ = wz;
+    if (wz > maxZ) maxZ = wz;
+  }
+
+  box.min.set(minX, minY, minZ);
+  box.max.set(maxX, maxY, maxZ);
+}
+
+function shiftPoints(world: Float32Array, dx: number, dy: number, dz: number) {
+  for (let i = 0; i < world.length; i += 3) {
+    world[i]! += dx;
+    world[i + 1]! += dy;
+    world[i + 2]! += dz;
+  }
+}
 /** Below this fraction of the longest extent an axis counts as flat, and Quickhull needs volume. */
 const FLAT_EXTENT_RATIO = 1e-4;
 
@@ -44,6 +99,7 @@ function hullVertices(points: Vector3[]) {
  *
  * Cost is O(hull vertices) per step, intended for a handful of showpiece
  * meshes (hundreds to a few thousand vertices), not dense scanned models.
+ * Concave shapes pass convex `parts`, which ride along for body-body contacts.
  * Bodies without geometry fall back to a rotated-extents box collider.
  */
 export class PhysicsBody {
@@ -63,12 +119,19 @@ export class PhysicsBody {
   localPoints: Float32Array = new Float32Array(0);
   /** The same points in world space, valid after `updateWorldAABB()` (xyz triplets). */
   worldPoints: Float32Array = new Float32Array(0);
+  /** Convex pieces body-body contacts test, in body-local space: the given `parts`, or the hull. */
+  localParts: Float32Array[] = [];
+  /** The pieces in world space and their bounds, valid after `updateWorldAABB()`. */
+  worldParts: Float32Array[] = [];
+  worldPartBounds: Box3[] = [];
+  private readonly parts: Float32Array[] | null;
 
-  constructor({ object, velocity, angularVelocity, restitution = 1 }: PhysicsBodyOptions) {
+  constructor({ object, velocity, angularVelocity, restitution = 1, parts }: PhysicsBodyOptions) {
     this.object = object;
     this.velocity = velocity ?? new Vector3();
     this.angularVelocity = angularVelocity ?? new Vector3();
     this.restitution = restitution;
+    this.parts = parts ?? null;
 
     this.computeLocalBounds();
     this.updateWorldAABB();
@@ -119,6 +182,15 @@ export class PhysicsBody {
     const points = unique.length >= 4 && hasVolume ? hullVertices(unique) : unique;
     this.localPoints = new Float32Array(points.flatMap((point) => [point.x, point.y, point.z]));
     this.worldPoints = new Float32Array(this.localPoints.length);
+    if (this.parts) {
+      this.localParts = this.parts;
+      this.worldParts = this.parts.map((part) => new Float32Array(part.length));
+      this.worldPartBounds = this.parts.map(() => new Box3());
+    } else {
+      this.localParts = [this.localPoints];
+      this.worldParts = [this.worldPoints];
+      this.worldPartBounds = [this.worldAABB];
+    }
 
     object.position.copy(prevPosition);
     object.quaternion.copy(prevQuaternion);
@@ -126,53 +198,17 @@ export class PhysicsBody {
     object.updateMatrixWorld(true);
   }
 
-  /** Rotate the vertex set into world space and take its exact AABB. */
+  /** Rotate the vertex set (and any convex pieces) into world space and take its exact AABB. */
   updateWorldAABB() {
-    const local = this.localPoints;
-    if (local.length === 0) {
+    if (this.localPoints.length === 0) {
       this.updateWorldAABBFromExtents();
       return;
     }
-
-    const world = this.worldPoints;
-    const { x: qx, y: qy, z: qz, w: qw } = this.object.quaternion;
-    const { x: px, y: py, z: pz } = this.object.position;
-    const { x: sx, y: sy, z: sz } = this.object.scale;
-
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let minZ = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    let maxZ = Number.NEGATIVE_INFINITY;
-
-    for (let i = 0; i < local.length; i += 3) {
-      const vx = local[i]! * sx;
-      const vy = local[i + 1]! * sy;
-      const vz = local[i + 2]! * sz;
-
-      // v' = q · v · q⁻¹, expanded (same math as Vector3.applyQuaternion).
-      const tx = 2 * (qy * vz - qz * vy);
-      const ty = 2 * (qz * vx - qx * vz);
-      const tz = 2 * (qx * vy - qy * vx);
-      const wx = vx + qw * tx + qy * tz - qz * ty + px;
-      const wy = vy + qw * ty + qz * tx - qx * tz + py;
-      const wz = vz + qw * tz + qx * ty - qy * tx + pz;
-
-      world[i] = wx;
-      world[i + 1] = wy;
-      world[i + 2] = wz;
-
-      if (wx < minX) minX = wx;
-      if (wx > maxX) maxX = wx;
-      if (wy < minY) minY = wy;
-      if (wy > maxY) maxY = wy;
-      if (wz < minZ) minZ = wz;
-      if (wz > maxZ) maxZ = wz;
+    transformPoints(this.localPoints, this.worldPoints, this.object, this.worldAABB);
+    if (!this.parts) return;
+    for (let i = 0; i < this.parts.length; i++) {
+      transformPoints(this.parts[i]!, this.worldParts[i]!, this.object, this.worldPartBounds[i]!);
     }
-
-    this.worldAABB.min.set(minX, minY, minZ);
-    this.worldAABB.max.set(maxX, maxY, maxZ);
   }
 
   /** Geometry-less fallback: rotated-extents AABB `|R| · halfExtents` around the local box. */
@@ -212,12 +248,12 @@ export class PhysicsBody {
     this.worldAABB.max.x += dx;
     this.worldAABB.max.y += dy;
     this.worldAABB.max.z += dz;
-
-    const world = this.worldPoints;
-    for (let i = 0; i < world.length; i += 3) {
-      world[i]! += dx;
-      world[i + 1]! += dy;
-      world[i + 2]! += dz;
+    shiftPoints(this.worldPoints, dx, dy, dz);
+    if (!this.parts) return;
+    _offset.set(dx, dy, dz);
+    for (let i = 0; i < this.parts.length; i++) {
+      shiftPoints(this.worldParts[i]!, dx, dy, dz);
+      this.worldPartBounds[i]!.translate(_offset);
     }
   }
 }
