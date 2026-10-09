@@ -11,6 +11,8 @@ export type LoadModelOptions = {
   draco?: string;
   /** Transcoder directory for `KHR_texture_basisu` assets (e.g. `"/libs/basis/"`). Requires `renderer`. */
   ktx2?: string;
+  /** Decode `EXT_meshopt_compression` assets. The decoder is bundled with three.js, so there's no path. */
+  meshopt?: boolean;
   /** Renderer that will draw the model — KTX2 support detection is renderer-specific. */
   renderer?: ModelRenderer;
 };
@@ -37,14 +39,15 @@ class AssetManagerClass {
   }
 
   /**
-   * Load a GLTF/GLB. Draco and KTX2 decoders are opt-in so plain models never
+   * Load a GLTF/GLB. Draco, KTX2 and meshopt decoders are opt-in so plain models never
    * download them; the shared loader keeps the first decoder paths it is given.
    */
-  async loadModel(url: string, { onProgress, draco, ktx2, renderer }: LoadModelOptions = {}) {
+  async loadModel(url: string, { onProgress, draco, ktx2, meshopt, renderer }: LoadModelOptions = {}) {
     const [loader] = await Promise.all([
       this.getGLTFLoader(),
       draco && this.attachDraco(draco),
       ktx2 && this.attachKTX2(ktx2, renderer),
+      meshopt && this.attachMeshopt(),
     ]);
     return loader.loadAsync(url, onProgress);
   }
@@ -74,6 +77,14 @@ class AssetManagerClass {
     const ktx2Loader = new KTX2Loader(this.loadingManager).setTranscoderPath(transcoderPath);
     if (renderer) ktx2Loader.detectSupport(renderer);
     loader.setKTX2Loader(ktx2Loader);
+  }
+
+  private async attachMeshopt() {
+    const [loader, { MeshoptDecoder }] = await Promise.all([
+      this.getGLTFLoader(),
+      import("three/addons/libs/meshopt_decoder.module.js"),
+    ]);
+    loader.setMeshoptDecoder(MeshoptDecoder);
   }
 
   async loadTexture(url: string, onProgress?: (event: ProgressEvent) => void) {
