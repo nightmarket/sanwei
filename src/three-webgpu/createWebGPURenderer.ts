@@ -1,4 +1,3 @@
-import WebGL from "three/addons/capabilities/WebGL.js";
 import { DisplayP3ColorSpace, LinearDisplayP3ColorSpace } from "three/addons/math/ColorSpaces.js";
 import { ColorManagement, SRGBColorSpace, WebGPURenderer } from "three/webgpu";
 import { Device } from "../core/Device";
@@ -27,15 +26,8 @@ function uploadImagesAsDisplayP3(queue: GPUQueue) {
 let outputColorSpace: PredefinedColorSpace = SRGBColorSpace;
 /** Set when `setOutputColorSpace` pins a preview. A `(color-gamut: p3)` change clears it. */
 let outputPinned = false;
-let p3Context: boolean | undefined;
 let gamutMedia: MediaQueryList | undefined;
 const taggedOutputs = new Map<HTMLCanvasElement, (space: PredefinedColorSpace) => void>();
-
-/** Same probe as the three.js wide-gamut example: the drawing buffer has to keep `display-p3`. */
-function isP3Context() {
-  p3Context ??= WebGL.isColorSpaceAvailable(DisplayP3ColorSpace);
-  return p3Context;
-}
 
 function displayOutputColorSpace(): PredefinedColorSpace {
   return gamutMedia?.matches ? DisplayP3ColorSpace : SRGBColorSpace;
@@ -52,9 +44,9 @@ function followDisplayGamut() {
   if (gamutMedia) return;
   gamutMedia = matchMedia("(color-gamut: p3)");
   if (!outputPinned) outputColorSpace = displayOutputColorSpace();
-  gamutMedia.addEventListener("change", (event) => {
+  gamutMedia.addEventListener("change", () => {
     outputPinned = false;
-    applyOutputColorSpace(event.matches ? DisplayP3ColorSpace : SRGBColorSpace);
+    applyOutputColorSpace(displayOutputColorSpace());
   });
 }
 
@@ -80,7 +72,9 @@ function tagCanvasColorSpace(
   if ("unpackColorSpace" in gl) gl.unpackColorSpace = DisplayP3ColorSpace;
   else console.warn("sanwei: WebGL2 can't upload images as Display P3; they will look oversaturated");
   // Unpack follows the working space, so it stays Display P3 when output drops to sRGB.
-  if (!isP3Context()) return null;
+  // The drawing buffer has to keep `display-p3`, as in three.js's wide-gamut example.
+  gl.drawingBufferColorSpace = DisplayP3ColorSpace;
+  if (gl.drawingBufferColorSpace !== DisplayP3ColorSpace) return null;
   return (space: PredefinedColorSpace) => {
     gl.drawingBufferColorSpace = space;
   };
@@ -152,6 +146,11 @@ export async function createWebGPURenderer({ canvas, antialias, alpha, forceWebG
     taggedOutputs.set(canvas, apply);
     followDisplayGamut();
     apply(outputColorSpace);
+    const dispose = renderer.dispose.bind(renderer);
+    renderer.dispose = () => {
+      taggedOutputs.delete(canvas);
+      return dispose();
+    };
   }
   return renderer;
 }
