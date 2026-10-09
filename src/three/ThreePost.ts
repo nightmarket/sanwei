@@ -8,7 +8,6 @@ import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { PassType } from "../core/constants";
 import type { DebugContext } from "../core/debugHelpers";
-import { RAF } from "../core/RAF";
 import type { SanweiApp } from "../core/SanweiApp";
 import type { IPost, IScene } from "../core/types";
 import { addUniforms } from "../util/bindings";
@@ -172,7 +171,7 @@ export class Post implements IPost {
       this.composer.writeBuffer = this.composer.renderTarget1;
       this.composer.readBuffer = target;
 
-      this.composer.render(RAF.delta);
+      this.composer.render(this.app.frame.delta);
 
       // Restore
       this.composer.renderToScreen = origRenderToScreen;
@@ -196,7 +195,7 @@ export class Post implements IPost {
     if (this.enabled) {
       this.passes[PassType.RENDER].camera = activeCamera;
       this.updatePassUniforms();
-      this.composer.render(RAF.delta);
+      this.composer.render(this.app.frame.delta);
     } else {
       this.app.render(this.sceneClass.scene, activeCamera);
     }

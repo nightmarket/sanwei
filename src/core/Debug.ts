@@ -2,6 +2,7 @@ import type { Pane, PaneOptions } from "@nightmarket/tiao/core";
 import type { PerfMonitor } from "@nightmarket/tiao/perf-pane";
 import type { Camera } from "three";
 import { isDebugEnabled, NO_RAYCAST_CLASS } from "./constants";
+import { RAF } from "./RAF";
 
 export type DebugInitOptions = {
   renderer?: any;
@@ -181,6 +182,33 @@ export class DebugClass {
       order: -1,
     });
     this.perfApi.addPerfMonitors(pane, this.perf, { maxFps: 144 });
+    this.addFrameLoopMonitors(pane, this.perf.interval);
+  }
+
+  /** Shared-loop cost: the whole loop as a graph, and each callback's share, read at poll time. */
+  private addFrameLoopMonitors(pane: Pane, interval: number) {
+    RAF.profiling = true;
+    const loop = {
+      get total() {
+        return RAF.inspect().reduce((sum, entry) => sum + entry.ms, 0);
+      },
+      get callbacks() {
+        return RAF.inspect()
+          .map((entry) => `${entry.label} ${entry.ms.toFixed(2)}`)
+          .join(" · ");
+      },
+    };
+    const folder = pane.addFolder({ title: "Frame Loop" });
+    folder.addBinding(loop, "total", {
+      label: "Loop",
+      readonly: true,
+      view: "graph",
+      interval,
+      min: 0,
+      unit: "ms",
+      format: (value: number) => value.toFixed(2),
+    });
+    folder.addBinding(loop, "callbacks", { label: "Callbacks", readonly: true, interval });
   }
 
   register(name: string, folder: any) {
@@ -220,6 +248,7 @@ export class DebugClass {
     for (const entry of this.setups) entry.cleanup?.();
     this.setups.clear();
     this.perf?.dispose();
+    RAF.profiling = false;
 
     for (const pane of this.panes) pane.dispose();
     this.panes.clear();

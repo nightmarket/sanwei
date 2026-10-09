@@ -1,5 +1,6 @@
+import WebGL from "three/addons/capabilities/WebGL.js";
 import { DisplayP3ColorSpace, LinearDisplayP3ColorSpace } from "three/addons/math/ColorSpaces.js";
-import { ColorManagement, WebGPURenderer } from "three/webgpu";
+import { ColorManagement, SRGBColorSpace, WebGPURenderer } from "three/webgpu";
 import { Device } from "../core/Device";
 
 export type CreateWebGPURendererOptions = {
@@ -23,8 +24,39 @@ function uploadImagesAsDisplayP3(queue: GPUQueue) {
     );
 }
 
-let outputColorSpace: PredefinedColorSpace = DisplayP3ColorSpace;
+let outputColorSpace: PredefinedColorSpace = SRGBColorSpace;
+/** Set when `setOutputColorSpace` pins a preview. A `(color-gamut: p3)` change clears it. */
+let outputPinned = false;
+let p3Context: boolean | undefined;
+let gamutMedia: MediaQueryList | undefined;
 const taggedOutputs = new Map<HTMLCanvasElement, (space: PredefinedColorSpace) => void>();
+
+/** Same probe as the three.js wide-gamut example: the drawing buffer has to keep `display-p3`. */
+function isP3Context() {
+  p3Context ??= WebGL.isColorSpaceAvailable(DisplayP3ColorSpace);
+  return p3Context;
+}
+
+function displayOutputColorSpace(): PredefinedColorSpace {
+  return gamutMedia?.matches ? DisplayP3ColorSpace : SRGBColorSpace;
+}
+
+function applyOutputColorSpace(space: PredefinedColorSpace) {
+  outputColorSpace = space;
+  for (const apply of taggedOutputs.values()) apply(space);
+}
+
+/** Output follows the display, as in the wide-gamut example. The working space stays linear P3.
+ * Unpack stays Display P3, so textures already uploaded into that space stay valid. */
+function followDisplayGamut() {
+  if (gamutMedia) return;
+  gamutMedia = matchMedia("(color-gamut: p3)");
+  if (!outputPinned) outputColorSpace = displayOutputColorSpace();
+  gamutMedia.addEventListener("change", (event) => {
+    outputPinned = false;
+    applyOutputColorSpace(event.matches ? DisplayP3ColorSpace : SRGBColorSpace);
+  });
+}
 
 /** `WebGPURenderer` leaves the canvas at sRGB, which shows P3 output washed out, and WebGL uploads
  * images as sRGB. The WebGPU context is configured lazily on the first render, so `configure` is
@@ -47,17 +79,19 @@ function tagCanvasColorSpace(
   if (!gl) return null;
   if ("unpackColorSpace" in gl) gl.unpackColorSpace = DisplayP3ColorSpace;
   else console.warn("sanwei: WebGL2 can't upload images as Display P3; they will look oversaturated");
-  if (!("drawingBufferColorSpace" in gl)) return null;
+  // Unpack follows the working space, so it stays Display P3 when output drops to sRGB.
+  if (!isP3Context()) return null;
   return (space: PredefinedColorSpace) => {
     gl.drawingBufferColorSpace = space;
   };
 }
 
-/** Switches every P3-tagged canvas between P3 and sRGB output, e.g. to preview an sRGB screen from
- * a P3 one. The working space stays P3; sRGB output clips to the sRGB gamut like such a screen. */
+/** Pins every P3-capable canvas to `space`, e.g. to preview an sRGB screen from a P3 one. The
+ * working space stays P3; sRGB output clips to the sRGB gamut like such a screen. The next
+ * `(color-gamut: p3)` change follows the display again. */
 export function setOutputColorSpace(space: PredefinedColorSpace) {
-  outputColorSpace = space;
-  for (const apply of taggedOutputs.values()) apply(space);
+  outputPinned = true;
+  applyOutputColorSpace(space);
 }
 
 function requestSharedDevice(): Promise<GPUDevice | null> {
@@ -93,8 +127,9 @@ export function hasGpuRendererSupport() {
 /**
  * One WebGPURenderer per canvas, sharing a single GPUDevice when WebGPU is
  * available and falling back to the WebGL2 backend otherwise. GPU tier
- * detection and the device request run in parallel. Outputs Display P3 when
- * the app opted in (`@nightmarket/sanwei/display-p3`) and the canvas supports it.
+ * detection and the device request run in parallel. With `@nightmarket/sanwei/display-p3`,
+ * output is Display P3 when the context can present it and `(color-gamut: p3)` matches,
+ * and sRGB otherwise. Dragging the window to another screen follows the media query.
  */
 export async function createWebGPURenderer({ canvas, antialias, alpha, forceWebGL }: CreateWebGPURendererOptions) {
   const useWebGL = forceWebGL || new URLSearchParams(window.location.search).has("forceWebGL") || !navigator.gpu;
@@ -114,8 +149,9 @@ export async function createWebGPURenderer({ canvas, antialias, alpha, forceWebG
       retag(space);
       renderer.outputColorSpace = space;
     };
-    apply(outputColorSpace);
     taggedOutputs.set(canvas, apply);
+    followDisplayGamut();
+    apply(outputColorSpace);
   }
   return renderer;
 }

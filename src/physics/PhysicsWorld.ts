@@ -127,7 +127,7 @@ export class PhysicsWorld {
     this.planes = planes;
   }
 
-  /** Advance the simulation. `delta` in seconds (e.g. `RAF.delta`). */
+  /** Advance the simulation. `delta` in seconds (e.g. `app.frame.delta`). */
   step(delta: number) {
     const dt = Math.min(delta, this.maxDelta);
     if (dt <= 0) return;
