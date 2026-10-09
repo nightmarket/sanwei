@@ -55,6 +55,7 @@ Per-frame tuning is for one frame at `TUNED_FPS`: scale steps by `frame.frames` 
 
 ```ts
 await AssetManager.loadModel("/model.glb", { draco: "/libs/draco/", ktx2: "/libs/basis/", renderer });
+await AssetManager.loadModel("/quantized.glb", { meshopt: true }); // EXT_meshopt_compression, decoder bundled with three
 ```
 
 ### Display P3
