@@ -5,8 +5,8 @@ import { isDebugEnabled } from "./constants";
 
 type ModelRenderer = WebGLRenderer | WebGPURenderer;
 
-export type LoadModelOptions = {
-  onProgress?: (event: ProgressEvent) => void;
+/** Decoders a model needs: Draco, KTX2 and meshopt are opt-in so plain models never download them. */
+export type ModelDecoderOptions = {
   /** Decoder directory for `KHR_draco_mesh_compression` assets (e.g. `"/libs/draco/"`). */
   draco?: string;
   /** Transcoder directory for `KHR_texture_basisu` assets (e.g. `"/libs/basis/"`). Requires `renderer`. */
@@ -15,6 +15,10 @@ export type LoadModelOptions = {
   meshopt?: boolean;
   /** Renderer that will draw the model — KTX2 support detection is renderer-specific. */
   renderer?: ModelRenderer;
+};
+
+export type LoadModelOptions = ModelDecoderOptions & {
+  onProgress?: (event: ProgressEvent) => void;
 };
 
 class AssetManagerClass {
@@ -28,8 +32,12 @@ class AssetManagerClass {
     Cache.enabled = true;
 
     if (isDebugEnabled()) {
-      this.loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
-        console.log(`Loading file: ${url}.\nLoaded ${itemsLoaded} of ${itemsTotal} files.`);
+      // Nested loaders report the same URL more than once (GLTFLoader and its FileLoader both do).
+      const logged = new Set<string>();
+      this.loadingManager.onProgress = (url) => {
+        if (logged.has(url)) return;
+        logged.add(url);
+        console.log(`Loaded file: ${url}`);
       };
     }
 
@@ -39,17 +47,27 @@ class AssetManagerClass {
   }
 
   /**
-   * Load a GLTF/GLB. Draco, KTX2 and meshopt decoders are opt-in so plain models never
-   * download them; the shared loader keeps the first decoder paths it is given.
+   * Load a GLTF/GLB. The shared loader keeps the first decoder paths it is given.
    */
-  async loadModel(url: string, { onProgress, draco, ktx2, meshopt, renderer }: LoadModelOptions = {}) {
+  async loadModel(url: string, { onProgress, ...decoders }: LoadModelOptions = {}) {
+    const loader = await this.getModelLoader(decoders);
+    return loader.loadAsync(url, onProgress);
+  }
+
+  /** Parse a GLB that's already downloaded, e.g. one the page fetched for another use. */
+  async parseModel(data: ArrayBuffer, decoders: ModelDecoderOptions = {}) {
+    const loader = await this.getModelLoader(decoders);
+    return loader.parseAsync(data, "");
+  }
+
+  private async getModelLoader({ draco, ktx2, meshopt, renderer }: ModelDecoderOptions) {
     const [loader] = await Promise.all([
       this.getGLTFLoader(),
       draco && this.attachDraco(draco),
       ktx2 && this.attachKTX2(ktx2, renderer),
       meshopt && this.attachMeshopt(),
     ]);
-    return loader.loadAsync(url, onProgress);
+    return loader;
   }
 
   private getGLTFLoader() {

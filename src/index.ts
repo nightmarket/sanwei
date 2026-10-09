@@ -6,7 +6,7 @@
 //   import { createSanweiApp } from "@nightmarket/sanwei/three-webgpu"; // WebGPU
 
 export { Accelerometer } from "./core/Accelerometer";
-export { AssetManager, type LoadModelOptions } from "./core/AssetManager";
+export { AssetManager, type LoadModelOptions, type ModelDecoderOptions } from "./core/AssetManager";
 export { type CameraConfig, CameraController } from "./core/CameraController";
 export { CAMERA_MANAGER_UNIFORMS, CameraManager } from "./core/CameraManager";
 export * from "./core/constants";
