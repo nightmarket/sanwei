@@ -244,8 +244,9 @@ export class SanweiApp {
     this.hasSize = this.rendererManager.resize();
     this.refreshRect();
     if (!this.hasSize) return;
-    this.scenes.resize();
+    // Cameras first: scenes size their passes and bounds from the camera's new aspect.
     this.cameras.resize();
+    this.scenes.resize();
   };
 
   private syncTick() {
