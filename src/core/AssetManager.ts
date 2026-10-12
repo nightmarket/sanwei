@@ -105,12 +105,16 @@ class AssetManagerClass {
     loader.setMeshoptDecoder(MeshoptDecoder);
   }
 
+  /** Resolves once the image is decoded as well as loaded, so its first upload doesn't decode it on the
+   * main thread mid-frame. */
   async loadTexture(url: string, onProgress?: (event: ProgressEvent) => void) {
     if (!this.textureLoader) {
       this.textureLoader = new TextureLoader(this.loadingManager);
       this.textureLoader.setCrossOrigin("anonymous");
     }
-    return this.textureLoader.loadAsync(url, onProgress);
+    const texture = await this.textureLoader.loadAsync(url, onProgress);
+    await texture.image.decode();
+    return texture;
   }
 }
 
