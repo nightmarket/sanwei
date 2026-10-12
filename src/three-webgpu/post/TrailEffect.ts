@@ -175,7 +175,6 @@ export class TrailEffect {
 
   /** `frames` is the calling app's `frame.frames`. */
   update(scene: Scene, camera: Camera, frames: number) {
-    const active = this.layers.slice(0, this.activeLayers);
     for (const layer of this.layers) layer.history.value = layer.old.texture;
     this.uFrames.value = frames;
 
@@ -183,11 +182,17 @@ export class TrailEffect {
     this.renderer.clear();
     this.renderer.render(scene, camera);
 
-    for (const layer of active) {
+    // Every active layer composites from the previous frame's histories before any of them swaps.
+    for (let i = 0; i < this.activeLayers; i++) {
+      const layer = this.layers[i];
+      if (!layer) continue;
       this.renderer.setRenderTarget(layer.comp);
       layer.quad.render(this.renderer);
     }
-    for (const layer of active) [layer.old, layer.comp] = [layer.comp, layer.old];
+    for (let i = 0; i < this.activeLayers; i++) {
+      const layer = this.layers[i];
+      if (layer) [layer.old, layer.comp] = [layer.comp, layer.old];
+    }
   }
 
   renderToScreen() {

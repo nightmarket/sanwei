@@ -48,6 +48,8 @@ export class RendererManager {
   renderer: any = null;
 
   private settings: RendererSettings;
+  /** Last size handed to the renderer, in CSS pixels. */
+  private appliedSize = { width: 0, height: 0, pixelRatio: 0 };
 
   constructor(
     private uniforms: AppUniformsShape,
@@ -133,6 +135,12 @@ export class RendererManager {
     if (width === 0 || height === 0) return false;
 
     const pixelRatio = this.uniforms.uPixelRatio.value;
+    const size = this.appliedSize;
+    // `setSize` reallocates the drawing buffers, so an unchanged size skips it.
+    if (size.width === width && size.height === height && size.pixelRatio === pixelRatio) return true;
+    size.width = width;
+    size.height = height;
+    size.pixelRatio = pixelRatio;
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height);
     this.uniforms.uScreen.value.set(width * pixelRatio, height * pixelRatio);
