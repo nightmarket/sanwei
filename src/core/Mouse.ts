@@ -265,9 +265,10 @@ class MouseClass {
   };
 
   init = () => {
-    window.addEventListener(events.move, this.handleMousemove as EventListener);
-    window.addEventListener(events.down, this.handleMousedown as EventListener);
-    window.addEventListener(events.up, this.handleMouseup as EventListener);
+    // Nothing here calls `preventDefault`, so the browser never has to wait on these to scroll.
+    window.addEventListener(events.move, this.handleMousemove as EventListener, { passive: true });
+    window.addEventListener(events.down, this.handleMousedown as EventListener, { passive: true });
+    window.addEventListener(events.up, this.handleMouseup as EventListener, { passive: true });
 
     if (events.wheel) {
       window.addEventListener(events.wheel, this.handleWheel as EventListener, { passive: true });
