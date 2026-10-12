@@ -1,8 +1,9 @@
-import { texture, uniform, uv } from "three/tsl";
+import { positionGeometry, texture, uniform, uv, vec4 } from "three/tsl";
 import {
   type Camera,
   DepthTexture,
   HalfFloatType,
+  Mesh,
   type Node,
   NodeMaterial,
   NormalBlending,
@@ -67,10 +68,16 @@ type TrailLayer = {
  * Feedback trail: each frame renders the scene into `currentFrame`, composites
  * it with the previous result into ping-ponged history targets (one pair per
  * layer), and `renderToScreen` draws the accumulated trail over whatever is bound.
+ * `presentMesh` draws it from inside another render instead.
  */
 export class TrailEffect {
   /** Layers from this index on skip their composite pass; their history goes stale until re-enabled. */
   activeLayers: number;
+  /** The present as a scene object: a full-screen triangle in clip space, drawn inside whichever render
+   * includes it, after the objects it covers. Unlike `renderToScreen`, that costs no render pass of its
+   * own, which on tile-based (mobile) GPUs would store and reload the whole target. Keep it out of the
+   * scene `update` renders, e.g. on a camera layer that pass disables. */
+  readonly presentMesh: Mesh;
 
   private renderer: TrailEffectOptions["renderer"];
   private getScreenSize: () => { x: number; y: number };
@@ -116,6 +123,8 @@ export class TrailEffect {
       };
     });
     this.activeLayers = this.layers.length;
+    this.presentMesh = new Mesh(this.presentQuad.geometry, this.presentMaterial);
+    this.presentMesh.frustumCulled = false;
   }
 
   init() {
@@ -158,6 +167,8 @@ export class TrailEffect {
     presentMaterial.blending = NormalBlending;
     presentMaterial.fragmentNode = this.presentFn(presentContext);
     if (this.presentDepthFn) presentMaterial.depthNode = this.presentDepthFn(presentContext);
+    // `presentMesh` is drawn by a regular scene render, so its triangle is placed in clip space directly.
+    presentMaterial.vertexNode = vec4(positionGeometry.xy, 0, 1);
     this.presentQuad.name = "TrailEffectPresent";
 
     this.resize();
@@ -173,30 +184,34 @@ export class TrailEffect {
     this.renderer.setRenderTarget(previous);
   }
 
-  /** `frames` is the calling app's `frame.frames`. */
+  /** `frames` is the calling app's `frame.frames`. Every pass clears its own target as it starts, rather
+   * than in a pass of its own. */
   update(scene: Scene, camera: Camera, frames: number) {
+    const { renderer } = this;
     for (const layer of this.layers) layer.history.value = layer.old.texture;
     this.uFrames.value = frames;
 
-    this.renderer.setRenderTarget(this.currentFrame);
-    this.renderer.clear();
-    this.renderer.render(scene, camera);
+    const autoClear = renderer.autoClear;
+    renderer.autoClear = true;
+    renderer.setRenderTarget(this.currentFrame);
+    renderer.render(scene, camera);
 
     // Every active layer composites from the previous frame's histories before any of them swaps.
     for (let i = 0; i < this.activeLayers; i++) {
       const layer = this.layers[i];
       if (!layer) continue;
-      this.renderer.setRenderTarget(layer.comp);
-      layer.quad.render(this.renderer);
+      renderer.setRenderTarget(layer.comp);
+      layer.quad.render(renderer);
     }
+    renderer.autoClear = autoClear;
     for (let i = 0; i < this.activeLayers; i++) {
       const layer = this.layers[i];
       if (layer) [layer.old, layer.comp] = [layer.comp, layer.old];
     }
+    for (const layer of this.layers) layer.trail.value = layer.old.texture;
   }
 
   renderToScreen() {
-    for (const layer of this.layers) layer.trail.value = layer.old.texture;
     this.presentQuad.render(this.renderer);
   }
 

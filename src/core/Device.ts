@@ -14,8 +14,16 @@ export type QualityPreset = {
 
 const DEFAULT_TIER: GpuTier = 1;
 
-/** detect-gpu fetches its benchmark table from a CDN; past this, fall back to the default tier. */
+/** Past this the benchmark table still hasn't loaded, so fall back to the default tier. */
 const DETECT_TIMEOUT_MS = 2000;
+
+/** detect-gpu's benchmark tables ship with the app as on-demand chunks instead of coming from its CDN,
+ * so a device loads only its own GPU family's, with no third-party round trip before the first frame.
+ * Each table leads with its format version, which detect-gpu's own loader strips. */
+async function loadBenchmarks(file: string) {
+  const { default: table } = await import(`detect-gpu/dist/benchmarks/${file}`);
+  return table.slice(1);
+}
 
 function clampTier(tier: number | undefined): GpuTier {
   if (tier === 0 || tier === 1 || tier === 2 || tier === 3) return tier;
@@ -58,7 +66,7 @@ class DeviceClass {
   private async detect() {
     this.isMobile = isTouchDevice();
     this.gpuInfo = await Promise.race([
-      getGPUTier(),
+      getGPUTier({ override: { loadBenchmarks } }),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), DETECT_TIMEOUT_MS)),
     ]);
     this.tier = clampTier(this.gpuInfo?.tier);

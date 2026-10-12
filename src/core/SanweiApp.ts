@@ -1,5 +1,6 @@
 import type { PaneOptions } from "@nightmarket/tiao/core";
 import { Accelerometer } from "./Accelerometer";
+import { AdaptivePixelRatio } from "./AdaptivePixelRatio";
 import { AssetManager } from "./AssetManager";
 import { CameraManager } from "./CameraManager";
 import { Device } from "./Device";
@@ -77,6 +78,9 @@ export type SanweiAppOptions = {
    * resize/scroll. Default `live`.
    */
   rectMode?: RectMode;
+  /** Render resolution that follows the frame rate: the pixel ratio steps between `min` and `max`,
+   * starting from `Device.pixelRatio` (see `AdaptivePixelRatio`). Default off, a fixed ratio. */
+  adaptivePixelRatio?: { min: number; max: number };
 };
 
 /** Canvas-local pointer state derived from the window-level `Mouse` singleton. */
@@ -128,6 +132,8 @@ export class SanweiApp {
   private resizeObserver: ResizeObserver | null = null;
   private intersectionObserver: IntersectionObserver | null = null;
   private cachedRect: DOMRect | null = null;
+  private adaptiveOptions: SanweiAppOptions["adaptivePixelRatio"];
+  private adaptivePixelRatio: AdaptivePixelRatio | null = null;
   private readyResolve!: () => void;
 
   constructor(options: SanweiAppOptions) {
@@ -139,6 +145,7 @@ export class SanweiApp {
     this.debugPaneOptions = options.debugPane ?? {};
     this.pauseWhenHidden = options.pauseWhenHidden ?? false;
     this.rectMode = options.rectMode ?? "live";
+    this.adaptiveOptions = options.adaptivePixelRatio;
 
     this.uniforms = createAppUniforms();
     this.rendererManager = new RendererManager(this.uniforms, this.name, options.rendererSettings);
@@ -174,6 +181,11 @@ export class SanweiApp {
     this.renderer._animation?.stop();
 
     this.uniforms.uPixelRatio.value = Device.pixelRatio;
+    if (this.adaptiveOptions) {
+      const { min, max } = this.adaptiveOptions;
+      this.adaptivePixelRatio = new AdaptivePixelRatio(min, max, Device.pixelRatio);
+      this.uniforms.uPixelRatio.value = this.adaptivePixelRatio.ratio;
+    }
     this.rendererManager.init({ canvas: this.canvas, renderer: this.rendererManager.renderer });
 
     const shared = this.sharedDebugContext ?? ((await this.initDebugFn?.()) || null);
@@ -234,6 +246,11 @@ export class SanweiApp {
 
   update = (frame: FrameState) => {
     this.frame.copy(frame);
+    const adaptive = this.adaptivePixelRatio;
+    if (adaptive?.update(frame.delta)) {
+      this.uniforms.uPixelRatio.value = adaptive.ratio;
+      this.handleResize();
+    }
     if (!this.hasSize) return;
     this.updatePointer();
     this.scenes.render();
@@ -257,6 +274,7 @@ export class SanweiApp {
       retainGlobalTick();
       this.unsubscribeTick = RAF.subscribe(this.update, { fps: this.fps, order: RAF_ORDER.SCENE, label: this.name });
       this.renderer._animation?.start();
+      this.adaptivePixelRatio?.pause();
     } else {
       this.unsubscribeTick?.();
       this.unsubscribeTick = null;

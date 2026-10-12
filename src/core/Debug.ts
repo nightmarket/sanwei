@@ -2,6 +2,7 @@ import type { Pane, PaneOptions } from "@nightmarket/tiao/core";
 import type { PerfMonitor } from "@nightmarket/tiao/perf-pane";
 import type { Camera } from "three";
 import { isDebugEnabled, NO_RAYCAST_CLASS } from "./constants";
+import { Device } from "./Device";
 import { RAF } from "./RAF";
 
 export type DebugInitOptions = {
@@ -183,6 +184,21 @@ export class DebugClass {
     });
     this.perfApi.addPerfMonitors(pane, this.perf, { maxFps: 144 });
     this.addFrameLoopMonitors(pane, this.perf.interval);
+    this.addDeviceMonitors(pane, renderer);
+  }
+
+  /** What this device actually got: the backend and quality tier vary most on phones. */
+  private addDeviceMonitors(pane: Pane, renderer: any) {
+    const device = {
+      backend: renderer.backend?.isWebGPUBackend ? "WebGPU" : "WebGL2",
+      gpu: Device.gpuInfo?.gpu ?? "unknown",
+      tier: Device.tier,
+      pixelRatio: renderer.getPixelRatio(),
+    };
+    const folder = pane.addFolder({ title: "Device" });
+    for (const key of Object.keys(device) as (keyof typeof device)[]) {
+      folder.addBinding(device, key, { readonly: true });
+    }
   }
 
   /** Shared-loop cost: the whole loop as a graph, and each callback's share, read at poll time. */

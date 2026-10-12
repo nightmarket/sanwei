@@ -21,6 +21,9 @@ const DRAG_MOMENTUM_FRAME_MS = 1000 / 60;
 const DRAG_MOMENTUM_SCALE = 0.6;
 const DRAG_MOMENTUM_FRICTION = 0.96;
 const DRAG_MOMENTUM_STOP_THRESHOLD_SQ = 0.000025;
+/** Share of each touch move's velocity the release velocity takes on, so one uneven move between frames
+ * doesn't decide the fling. */
+const TOUCH_VELOCITY_SMOOTHING = 0.35;
 const WHEEL_MOMENTUM_SCALE = 0.08;
 const WHEEL_MOMENTUM_FRICTION = 0.94;
 const WHEEL_MOMENTUM_STOP_THRESHOLD_SQ = 0.000025;
@@ -47,6 +50,8 @@ export interface MouseDragState {
   lastMoveTime: number;
   momentumVelocity: Vector2;
   scrollScale: number;
+  /** A finger, not a mouse: the scroll follows it 1:1 instead of easing after it. */
+  touch: boolean;
 }
 
 export interface MouseScrollState {
@@ -97,6 +102,7 @@ class MouseClass {
     lastMoveTime: 0,
     momentumVelocity: new Vector2(),
     scrollScale: MOUSE_DRAG_SCROLL_SCALE,
+    touch: false,
   };
   lastUpWasClick = false;
 
@@ -105,6 +111,7 @@ class MouseClass {
   private dragStartPx = new Vector2();
   private wheelMomentumVelocity = new Vector2();
   private wheelMomentumScratch = new Vector2();
+  private dragVelocityScratch = new Vector2();
   private isScrollLocked = false;
   private dragLongPressTimeout: number | null = null;
   private handledWheelEvents = new WeakSet<WheelEvent>();
@@ -119,6 +126,11 @@ class MouseClass {
     if (!this.drag.active || this.drag.isDragging) return;
     this.clearLongPressTimeout();
     this.drag.isDragging = true;
+    // A finger's scroll follows it 1:1 from here, so the travel that told the drag from a tap is slop, as
+    // in native scrolling, rather than a jump.
+    if (!this.drag.touch) return;
+    this.drag.start.copy(this.position);
+    this.scroll.dragStart.copy(this.scroll.target);
   };
 
   private updatePosition = (e: MouseEvent | TouchEvent, now: number) => {
@@ -145,10 +157,13 @@ class MouseClass {
 
     if (targetX !== this.scroll.target.x || targetY !== this.scroll.target.y) {
       const elapsed = Math.max(now - this.drag.lastMoveTime, 1);
-
-      this.drag.momentumVelocity.set(
-        (targetX - this.scroll.target.x) * (DRAG_MOMENTUM_FRAME_MS / elapsed) * DRAG_MOMENTUM_SCALE,
-        (targetY - this.scroll.target.y) * (DRAG_MOMENTUM_FRAME_MS / elapsed) * DRAG_MOMENTUM_SCALE
+      const scale = (DRAG_MOMENTUM_FRAME_MS / elapsed) * DRAG_MOMENTUM_SCALE;
+      this.drag.momentumVelocity.lerp(
+        this.dragVelocityScratch.set(
+          (targetX - this.scroll.target.x) * scale,
+          (targetY - this.scroll.target.y) * scale
+        ),
+        this.drag.touch ? TOUCH_VELOCITY_SMOOTHING : 1
       );
       this.drag.lastMoveTime = now;
     }
@@ -156,8 +171,10 @@ class MouseClass {
     this.scroll.target.set(targetX, targetY);
   };
 
+  // Timed by the events' own timestamps rather than when their handlers ran, so a busy frame between two
+  // moves doesn't skew the drag velocity.
   private handleMousemove = (e: MouseEvent | TouchEvent) => {
-    const now = performance.now();
+    const now = e.timeStamp;
     const { x, y } = this.updatePosition(e, now);
 
     if (!this.drag.active || this.isScrollLocked) return;
@@ -178,7 +195,7 @@ class MouseClass {
   private handleMousedown = (e: MouseEvent | TouchEvent) => {
     this.clearLongPressTimeout();
     if (isOverUi(e)) return;
-    const now = performance.now();
+    const now = e.timeStamp;
     const { x, y } = this.updatePosition(e, now);
     this.lastUpWasClick = false;
     if (this.isScrollLocked) return;
@@ -187,7 +204,8 @@ class MouseClass {
     this.drag.startTime = now;
     this.drag.lastMoveTime = now;
     this.drag.start.copy(this.position);
-    this.drag.scrollScale = isTouchEvent(e) ? TOUCH_DRAG_SCROLL_SCALE : MOUSE_DRAG_SCROLL_SCALE;
+    this.drag.touch = isTouchEvent(e);
+    this.drag.scrollScale = this.drag.touch ? TOUCH_DRAG_SCROLL_SCALE : MOUSE_DRAG_SCROLL_SCALE;
     this.dragStartPx.set(x, y);
     this.scroll.dragStart.copy(this.scroll.target);
     this.drag.momentumVelocity.set(0, 0);
@@ -202,7 +220,7 @@ class MouseClass {
       return;
     }
 
-    const now = performance.now();
+    const now = e.timeStamp;
     const { x, y } = this.updatePosition(e, now);
     this.clearLongPressTimeout();
 
@@ -315,9 +333,13 @@ class MouseClass {
       } else {
         this.wheelMomentumVelocity.set(0, 0);
       }
+    } else if (this.drag.touch) {
+      // A finger held still lets go without a fling.
+      this.drag.momentumVelocity.multiplyScalar(DRAG_MOMENTUM_FRICTION ** frames);
     }
 
-    this.scroll.current.lerp(this.scroll.target, frame.lerpFactor(this.scroll.ease));
+    const followsFinger = this.drag.isDragging && this.drag.touch;
+    this.scroll.current.lerp(this.scroll.target, followsFinger ? 1 : frame.lerpFactor(this.scroll.ease));
 
     // Per tuned frame, so direction thresholds and `scroll.velocity` read the same at any refresh rate.
     const scrollDeltaX = (this.scroll.current.x - this.scroll.last.x) / frames;
