@@ -1,5 +1,5 @@
 import { DisplayP3ColorSpace, LinearDisplayP3ColorSpace } from "three/addons/math/ColorSpaces.js";
-import { ColorManagement, SRGBColorSpace, WebGPURenderer } from "three/webgpu";
+import { ColorManagement, LinearSRGBColorSpace, SRGBColorSpace, WebGPURenderer } from "three/webgpu";
 import { Device } from "../core/Device";
 
 export type CreateWebGPURendererOptions = {
@@ -80,6 +80,42 @@ function tagCanvasColorSpace(
   };
 }
 
+/**
+ * The canvas is drawn through an `-srgb` view of itself, so the GPU applies the sRGB curve as it writes
+ * and blends in linear, and three outputs the linear form of the canvas's space. Where that's the working
+ * space (Display P3 on a P3 screen, or sRGB without `display-p3`), three renders straight into the canvas
+ * instead of into a full-size half-float buffer it copies over in a pass of its own; elsewhere its copy
+ * converts only the primaries. For a renderer on a WebGPU device; returns false where it can't.
+ */
+function drawThroughSrgbView(renderer: WebGPURenderer, canvas: HTMLCanvasElement) {
+  const { backend } = renderer;
+  const context = canvas.getContext("webgpu");
+  // three's types leave the backend's `utils` out.
+  const utils = "utils" in backend ? backend.utils : null;
+  if (!context || typeof utils !== "object" || utils === null || !("getPreferredCanvasFormat" in utils)) return false;
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  const view: GPUTextureFormat = format === "rgba8unorm" ? "rgba8unorm-srgb" : "bgra8unorm-srgb";
+  // Pipelines and the canvas's MSAA buffer follow the view; the canvas itself can't take an `-srgb` format.
+  Object.assign(utils, { getPreferredCanvasFormat: () => view });
+  const configure = context.configure.bind(context);
+  context.configure = (configuration) => configure({ ...configuration, format, viewFormats: [view] });
+  const getCurrentTexture = context.getCurrentTexture.bind(context);
+  let current: GPUTexture | null = null;
+  context.getCurrentTexture = () => {
+    const texture = getCurrentTexture();
+    if (texture !== current) {
+      current = texture;
+      const createView = texture.createView.bind(texture);
+      texture.createView = (descriptor) => createView({ format: view, ...descriptor });
+    }
+    return texture;
+  };
+  return true;
+}
+
+const linearOf = (space: PredefinedColorSpace) =>
+  space === DisplayP3ColorSpace ? LinearDisplayP3ColorSpace : LinearSRGBColorSpace;
+
 /** Pins every P3-capable canvas to `space`, e.g. to preview an sRGB screen from a P3 one. The
  * working space stays P3; sRGB output clips to the sRGB gamut like such a screen. The next
  * `(color-gamut: p3)` change follows the display again. */
@@ -136,12 +172,15 @@ export async function createWebGPURenderer({ canvas, antialias, alpha, forceWebG
     ...(device ? { device } : { forceWebGL: true }),
   });
   await renderer.init();
+  const srgbView = Boolean(device) && drawThroughSrgbView(renderer, canvas);
+  const output = (space: PredefinedColorSpace) => (srgbView ? linearOf(space) : space);
+  renderer.outputColorSpace = output(SRGBColorSpace);
   const retag =
     ColorManagement.workingColorSpace === LinearDisplayP3ColorSpace && tagCanvasColorSpace(canvas, Boolean(device));
   if (retag) {
     const apply = (space: PredefinedColorSpace) => {
       retag(space);
-      renderer.outputColorSpace = space;
+      renderer.outputColorSpace = output(space);
     };
     taggedOutputs.set(canvas, apply);
     followDisplayGamut();
