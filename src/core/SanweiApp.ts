@@ -247,7 +247,7 @@ export class SanweiApp {
   update = (frame: FrameState) => {
     this.frame.copy(frame);
     const adaptive = this.adaptivePixelRatio;
-    if (adaptive?.update(frame.delta)) {
+    if (adaptive?.update(frame)) {
       this.uniforms.uPixelRatio.value = adaptive.ratio;
       this.handleResize();
     }

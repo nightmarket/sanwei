@@ -12,8 +12,15 @@ const MAX_DELTA_S = 0.25;
 const INTERVAL_SLACK_MS = 1;
 /** Frames of per-callback timing kept for the profiler. */
 const SAMPLE_WINDOW = 60;
-/** Smoothing on the measured display interval that `budget()` is measured against. */
-const FRAME_INTERVAL_LERP = 0.1;
+/** WebKit stamps frames in whole ms and lands them up to ~1.5 ms late. */
+const JITTER_MS = 2;
+/** This many deltas in a row that fit no whole number of refreshes, agreeing with each other, mean the
+ * display rate changed. */
+const RESEED_FRAMES = 4;
+/** Smoothing on the refresh interval, refined from frames that span one refresh. */
+const INTERVAL_LERP = 0.02;
+/** Share of the rounding error repaid each frame. */
+const DEBT_REPAY = 0.1;
 
 /** Execution bands within a frame; lower runs first. Input settles before anything reads it, scenes
  * render after scroll moves, and DOM chrome reads what the scenes just did. */
@@ -36,22 +43,21 @@ export type SubscribeOptions = {
 export class FrameState {
   /** Loop time in ms, excluding paused stretches and hidden tabs. */
   time = 0;
-  /** Seconds since this callback last ran (a throttled callback's own interval), at most
-   * `MAX_DELTA_S`. */
+  /** Seconds since this callback last ran (a throttled callback's own interval), advancing in whole
+   * display refreshes, at most `MAX_DELTA_S`. */
   delta = 0;
   /** `delta` in `TUNED_FPS` frames: 1 at 120 Hz, 2 at 60 Hz. */
   frames = 0;
   /** Loop frame counter. */
   frame = 0;
+  /** Milliseconds per display refresh, as the loop measures it. */
+  interval = 1000 / 60;
+  /** Refreshes the display waited past the frame this callback last ran in; 0 when it made its refresh. */
+  dropped = 0;
 
   /** A lerp factor tuned for one `TUNED_FPS` frame, compounded over `frames`. */
   lerpFactor(factor: number) {
     return 1 - (1 - factor) ** this.frames;
-  }
-
-  /** Milliseconds left before this frame overruns the display interval; gate optional work on it. */
-  budget() {
-    return RAF.budget();
   }
 
   copy(other: FrameState) {
@@ -59,6 +65,8 @@ export class FrameState {
     this.delta = other.delta;
     this.frames = other.frames;
     this.frame = other.frame;
+    this.interval = other.interval;
+    this.dropped = other.dropped;
     return this;
   }
 }
@@ -75,6 +83,8 @@ type Subscriber = {
   accumulated: number;
   skipped: number;
   lastTime: number;
+  /** Refreshes dropped right after its last run; null until the frame after that run starts. */
+  dropped: number | null;
   active: boolean;
   failed: boolean;
   samples: number[];
@@ -89,6 +99,62 @@ function parseRate(fps: FrameRate | null) {
 
 const average = (samples: number[]) => (samples.length ? samples.reduce((sum, ms) => sum + ms, 0) / samples.length : 0);
 
+/** How far a delta may land from a whole number of refreshes and still span exactly that many. */
+const tolerance = (interval: number) => Math.min(JITTER_MS, interval / 4);
+
+/** Learns the display's refresh interval from frame timestamps and advances loop time in whole refreshes,
+ * so whole-ms stamps and catch-up frames don't make steady motion step unevenly. */
+class RefreshClock {
+  /** Start at 60 Hz, so a device that is slow from its first frame still reads as dropping frames. */
+  interval = 1000 / 60;
+  /** Whole refreshes the last frame spanned. 0 on the first frame back after a reset. */
+  refreshes = 0;
+  /** Ms loop time owes wall time (+) or is ahead by (-), within ±`interval`. */
+  private debt = 0;
+  /** Recent deltas in a row that fit no whole number of refreshes. */
+  private misfits: number[] = [];
+
+  /** `raw`: clamped ms since the last frame, 0 after a reset. Returns the ms the loop advances. */
+  advance(raw: number) {
+    if (raw === 0) {
+      this.refreshes = 0;
+      this.debt = 0;
+      return 0;
+    }
+    this.learn(raw);
+    // Floored, within jitter, so a late frame's leftover part of a refresh counts once, with the catch-up
+    // after it, rather than rounding up and then again. Under one refresh is that catch-up; it still showed
+    // on a refresh of its own.
+    this.refreshes = Math.max(1, Math.floor((raw + tolerance(this.interval)) / this.interval));
+    this.debt = clamp(this.debt + raw - this.refreshes * this.interval, -this.interval, this.interval);
+    const repaid = this.debt * DEBT_REPAY;
+    this.debt -= repaid;
+    return this.refreshes * this.interval + repaid;
+  }
+
+  reset() {
+    this.debt = 0;
+    this.misfits.length = 0;
+  }
+
+  private learn(raw: number) {
+    const n = Math.round(raw / this.interval);
+    if (n >= 1 && Math.abs(raw - n * this.interval) <= tolerance(this.interval)) {
+      this.misfits.length = 0;
+      if (n === 1) this.interval = lerp(this.interval, raw, INTERVAL_LERP);
+      return;
+    }
+    this.misfits.push(raw);
+    if (this.misfits.length < RESEED_FRAMES) return;
+    const mean = average(this.misfits);
+    if (this.misfits.every((ms) => Math.abs(ms - mean) <= tolerance(mean))) {
+      this.interval = mean;
+      this.debt = 0;
+      this.misfits.length = 0;
+    } else this.misfits.shift();
+  }
+}
+
 /** One shared requestAnimationFrame loop. Runs only while it has subscribers and isn't paused. */
 class RAFBase {
   isSingleton = true;
@@ -97,11 +163,10 @@ class RAFBase {
 
   private subscribers: Subscriber[] = [];
   private state = new FrameState();
+  private clock = new RefreshClock();
   private time = 0;
   private frame = 0;
   private lastTimestamp: number | null = null;
-  private frameStart = 0;
-  private frameInterval = 1000 / 60;
   private playing = true;
   private rafId: number | null = null;
   private initialized = false;
@@ -135,6 +200,7 @@ class RAFBase {
       accumulated: 0,
       skipped: 0,
       lastTime: this.time,
+      dropped: null,
       active: true,
       failed: false,
       samples: [],
@@ -169,9 +235,6 @@ class RAFBase {
     return this.playing;
   }
 
-  /** Milliseconds left before the current frame overruns the measured display interval. */
-  budget = () => this.frameInterval - (performance.now() - this.frameStart);
-
   /** Average cost of each callback over the last `SAMPLE_WINDOW` frames, in run order (0 ms unless
    * `profiling`). */
   inspect = (): FrameLoopEntry[] =>
@@ -183,24 +246,27 @@ class RAFBase {
     this.rafId = null;
     if (!this.playing || this.subscribers.length === 0) return;
 
-    const frameDelta =
-      this.lastTimestamp === null ? 0 : clamp(timestamp - this.lastTimestamp, 0, MAX_DELTA_S * 1000);
+    const raw = this.lastTimestamp === null ? 0 : clamp(timestamp - this.lastTimestamp, 0, MAX_DELTA_S * 1000);
     this.lastTimestamp = timestamp;
+    const frameDelta = this.clock.advance(raw);
     this.time += frameDelta;
     this.frame++;
-    if (frameDelta > 0) this.frameInterval = lerp(this.frameInterval, frameDelta, FRAME_INTERVAL_LERP);
-    this.frameStart = performance.now();
 
     const { state } = this;
     state.time = this.time;
     state.frame = this.frame;
+    state.interval = this.clock.interval;
     // Schedule first, so the loop survives anything a callback does.
     this.rafId = requestAnimationFrame(this.update);
 
     for (const subscriber of this.subscribers) {
+      // Only the frame right after a callback's run says whether that run made its refresh.
+      subscriber.dropped ??= Math.max(0, this.clock.refreshes - 1);
       if (!subscriber.active || !this.isDue(subscriber, frameDelta)) continue;
       state.delta = clamp((this.time - subscriber.lastTime) / 1000, 0, MAX_DELTA_S);
       state.frames = state.delta * TUNED_FPS;
+      state.dropped = subscriber.dropped;
+      subscriber.dropped = null;
       subscriber.lastTime = this.time;
       this.run(subscriber);
     }
@@ -235,6 +301,7 @@ class RAFBase {
 
   private resetClock = () => {
     this.lastTimestamp = null;
+    this.clock.reset();
   };
 
   private start() {
