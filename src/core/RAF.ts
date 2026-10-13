@@ -43,6 +43,9 @@ export type SubscribeOptions = {
 export class FrameState {
   /** Loop time in ms, excluding paused stretches and hidden tabs. */
   time = 0;
+  /** This frame in the `performance.now()` timebase that event `timeStamp`s share, stepping as evenly as
+   * `time`. */
+  timestamp = 0;
   /** Seconds since this callback last ran (a throttled callback's own interval), advancing in whole
    * display refreshes, at most `MAX_DELTA_S`. */
   delta = 0;
@@ -62,6 +65,7 @@ export class FrameState {
 
   copy(other: FrameState) {
     this.time = other.time;
+    this.timestamp = other.timestamp;
     this.delta = other.delta;
     this.frames = other.frames;
     this.frame = other.frame;
@@ -110,7 +114,7 @@ class RefreshClock {
   /** Whole refreshes the last frame spanned. 0 on the first frame back after a reset. */
   refreshes = 0;
   /** Ms loop time owes wall time (+) or is ahead by (-), within ±`interval`. */
-  private debt = 0;
+  debt = 0;
   /** Recent deltas in a row that fit no whole number of refreshes. */
   private misfits: number[] = [];
 
@@ -254,6 +258,7 @@ class RAFBase {
 
     const { state } = this;
     state.time = this.time;
+    state.timestamp = timestamp - this.clock.debt;
     state.frame = this.frame;
     state.interval = this.clock.interval;
     // Schedule first, so the loop survives anything a callback does.
