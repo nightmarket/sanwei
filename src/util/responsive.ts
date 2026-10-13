@@ -22,6 +22,7 @@ export interface PointerEvents {
   move: string;
   up: string;
   down: string;
+  cancel?: string;
   wheel?: string;
 }
 
@@ -32,6 +33,7 @@ if (isTouchDevice()) {
     move: "touchmove",
     up: "touchend",
     down: "touchstart",
+    cancel: "touchcancel",
   };
 } else {
   events = {
