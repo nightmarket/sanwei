@@ -53,7 +53,6 @@ export class AdaptivePixelRatio {
     this.time += delta;
     if (this.cooldown > 0) {
       this.cooldown -= delta;
-      this.restartWindow();
       return false;
     }
     this.calls++;

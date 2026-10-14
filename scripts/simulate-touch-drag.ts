@@ -22,9 +22,10 @@ Object.assign(globalThis, {
     clearTimeout: () => {},
     matchMedia: () => ({ matches: true }),
   },
-  navigator: { userAgent: "iPhone", maxTouchPoints: 5 },
   Element: class {},
 });
+// Node's own `navigator` global is read-only.
+Object.defineProperty(globalThis, "navigator", { value: { userAgent: "iPhone", maxTouchPoints: 5 } });
 
 type MouseModule = typeof import("../src/core/Mouse");
 type Handlers = Record<"handleMousedown" | "handleMousemove" | "handleMouseup", (e: unknown) => void>;

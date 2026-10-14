@@ -278,13 +278,13 @@ class MouseClass {
     const { x, y } = this.updatePosition(e, now);
     this.lastUpWasClick = false;
     if (this.isScrollLocked) return;
-    this.stoppedFling = isTouchEvent(e) && this.drag.momentumVelocity.lengthSq() > 0;
+    this.drag.touch = isTouchEvent(e);
+    this.stoppedFling = this.drag.touch && this.drag.momentumVelocity.lengthSq() > 0;
     this.drag.active = true;
     this.drag.isDragging = false;
     this.drag.startTime = now;
     this.drag.lastMoveTime = now;
     this.drag.start.copy(this.position);
-    this.drag.touch = isTouchEvent(e);
     this.dragStartPx.set(x, y);
     this.scroll.dragStart.copy(this.scroll.target);
     this.drag.momentumVelocity.set(0, 0);
@@ -324,8 +324,9 @@ class MouseClass {
     }
   };
 
-  /** The system took the touch (a gesture of its own, an alert): it ends without a click or a fling. */
-  private handleTouchcancel = () => {
+  /** Ends a press without a click or a fling: the system took the touch (a gesture of its own, an alert),
+   * or scrolling was locked. */
+  private cancelDrag = () => {
     this.clearLongPressTimeout();
     this.lastUpWasClick = false;
     this.drag.active = false;
@@ -376,7 +377,7 @@ class MouseClass {
     window.addEventListener(events.move, this.handleMousemove as EventListener, { passive: true });
     window.addEventListener(events.down, this.handleMousedown as EventListener, { passive: true });
     window.addEventListener(events.up, this.handleMouseup as EventListener, { passive: true });
-    if (events.cancel) window.addEventListener(events.cancel, this.handleTouchcancel, { passive: true });
+    if (events.cancel) window.addEventListener(events.cancel, this.cancelDrag, { passive: true });
 
     if (events.wheel) {
       window.addEventListener(events.wheel, this.handleWheel as EventListener, { passive: true });
@@ -443,10 +444,7 @@ class MouseClass {
   };
 
   reset = () => {
-    this.lastUpWasClick = false;
-    this.clearLongPressTimeout();
-    this.drag.active = false;
-    this.drag.isDragging = false;
+    this.cancelDrag();
     this.drag.momentumVelocity.set(0, 0);
     this.wheelMomentumVelocity.set(0, 0);
     this.scroll.velocity.set(0, 0);
@@ -480,18 +478,16 @@ class MouseClass {
     const { frames } = frame;
     if (frames === 0) return;
 
-    if (this.scroller) {
-      this.followScroller(frames);
-      this.scroll.current.lerp(this.scroll.target, frame.lerpFactor(this.scroll.ease));
+    if (this.scroller) this.followScroller(frames);
+    else if (!this.drag.active) this.applyMomentum(frames);
+
+    const syntheticTouch = this.drag.touch && !this.scroller;
+    if (syntheticTouch && this.drag.isDragging) {
+      this.touchTrail.read(frame.timestamp - this.touchReadDelay * frame.interval, this.scroll.current);
+    } else if (syntheticTouch && this.drag.momentumVelocity.lengthSq() > 0) {
+      this.scroll.current.copy(this.scroll.target);
     } else {
-      if (!this.drag.active) this.applyMomentum(frames);
-      if (this.drag.touch && this.drag.isDragging) {
-        this.touchTrail.read(frame.timestamp - this.touchReadDelay * frame.interval, this.scroll.current);
-      } else if (this.drag.touch && this.drag.momentumVelocity.lengthSq() > 0) {
-        this.scroll.current.copy(this.scroll.target);
-      } else {
-        this.scroll.current.lerp(this.scroll.target, frame.lerpFactor(this.scroll.ease));
-      }
+      this.scroll.current.lerp(this.scroll.target, frame.lerpFactor(this.scroll.ease));
     }
 
     // Per tuned frame, so direction thresholds and `scroll.velocity` read the same at any refresh rate.
@@ -524,7 +520,7 @@ class MouseClass {
     window.removeEventListener(events.move, this.handleMousemove as EventListener);
     window.removeEventListener(events.down, this.handleMousedown as EventListener);
     window.removeEventListener(events.up, this.handleMouseup as EventListener);
-    if (events.cancel) window.removeEventListener(events.cancel, this.handleTouchcancel);
+    if (events.cancel) window.removeEventListener(events.cancel, this.cancelDrag);
 
     if (events.wheel) {
       window.removeEventListener(events.wheel, this.handleWheel as EventListener);

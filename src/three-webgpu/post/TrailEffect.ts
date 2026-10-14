@@ -59,7 +59,6 @@ type TrailLayer = {
   comp: RenderTarget;
   old: RenderTarget;
   history: TextureNode;
-  trail: TextureNode;
   material: NodeMaterial;
   quad: QuadMesh;
 };
@@ -68,7 +67,6 @@ type TrailLayer = {
  * Feedback trail: each frame renders the scene into `currentFrame`, composites
  * it with the previous result into ping-ponged history targets (one pair per
  * layer), and `renderToScreen` draws the accumulated trail over whatever is bound.
- * `presentMesh` draws it from inside another render instead.
  */
 export class TrailEffect {
   /** Layers from this index on skip their composite pass; their history goes stale until re-enabled. */
@@ -117,7 +115,6 @@ export class TrailEffect {
         comp,
         old,
         history: texture(old.texture),
-        trail: texture(old.texture),
         material,
         quad: new QuadMesh(material),
       };
@@ -138,7 +135,6 @@ export class TrailEffect {
       layer.comp.texture.name = `TrailEffect.comp${i}`;
       layer.old.texture.name = `TrailEffect.old${i}`;
       layer.history.uvNode = screenUv;
-      layer.trail.uvNode = screenUv;
       layer.material.name = `TrailEffect.Composite${i}`;
       layer.material.fragmentNode = this.compositeFn(
         {
@@ -155,7 +151,7 @@ export class TrailEffect {
 
     const { presentMaterial } = this;
     const presentContext = {
-      trail: this.layers.map((layer) => layer.trail),
+      trail: history,
       currentTex: this.currentTexNode,
       currentDepthTex: this.currentDepthTexNode,
       screenSize: this.uTrailScreen,
@@ -188,7 +184,6 @@ export class TrailEffect {
    * than in a pass of its own. */
   update(scene: Scene, camera: Camera, frames: number) {
     const { renderer } = this;
-    for (const layer of this.layers) layer.history.value = layer.old.texture;
     this.uFrames.value = frames;
 
     const autoClear = renderer.autoClear;
@@ -208,7 +203,7 @@ export class TrailEffect {
       const layer = this.layers[i];
       if (layer) [layer.old, layer.comp] = [layer.comp, layer.old];
     }
-    for (const layer of this.layers) layer.trail.value = layer.old.texture;
+    for (const layer of this.layers) layer.history.value = layer.old.texture;
   }
 
   renderToScreen() {

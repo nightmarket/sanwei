@@ -180,12 +180,11 @@ export class SanweiApp {
     // `syncTick` runs it only while this app ticks.
     this.renderer._animation?.stop();
 
-    this.uniforms.uPixelRatio.value = Device.pixelRatio;
     if (this.adaptiveOptions) {
       const { min, max } = this.adaptiveOptions;
       this.adaptivePixelRatio = new AdaptivePixelRatio(min, max, Device.pixelRatio);
-      this.uniforms.uPixelRatio.value = this.adaptivePixelRatio.ratio;
     }
+    this.uniforms.uPixelRatio.value = this.adaptivePixelRatio?.ratio ?? Device.pixelRatio;
     this.rendererManager.init({ canvas: this.canvas, renderer: this.rendererManager.renderer });
 
     const shared = this.sharedDebugContext ?? ((await this.initDebugFn?.()) || null);
