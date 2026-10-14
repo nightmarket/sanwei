@@ -96,7 +96,7 @@ function drawThroughSrgbView(renderer: WebGPURenderer, canvas: HTMLCanvasElement
   const format = navigator.gpu.getPreferredCanvasFormat();
   const view: GPUTextureFormat = format === "rgba8unorm" ? "rgba8unorm-srgb" : "bgra8unorm-srgb";
   // Pipelines and the canvas's MSAA buffer follow the view; the canvas itself can't take an `-srgb` format.
-  Object.assign(utils, { getPreferredCanvasFormat: () => view });
+  utils.getPreferredCanvasFormat = () => view;
   const configure = context.configure.bind(context);
   context.configure = (configuration) => configure({ ...configuration, format, viewFormats: [view] });
   const getCurrentTexture = context.getCurrentTexture.bind(context);
@@ -162,7 +162,7 @@ export function hasGpuRendererSupport() {
  * and sRGB otherwise. Dragging the window to another screen follows the media query.
  */
 export async function createWebGPURenderer({ canvas, antialias, alpha, forceWebGL }: CreateWebGPURendererOptions) {
-  const useWebGL = forceWebGL || new URLSearchParams(window.location.search).has("forceWebGL") || !navigator.gpu;
+  const useWebGL = forceWebGL || !navigator.gpu;
   const [device] = await Promise.all([useWebGL ? null : requestSharedDevice(), Device.init()]);
 
   const renderer = new WebGPURenderer({

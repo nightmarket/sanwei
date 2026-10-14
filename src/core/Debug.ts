@@ -187,7 +187,6 @@ export class DebugClass {
     this.addDeviceMonitors(pane, renderer);
   }
 
-  /** What this device actually got: the backend and quality tier vary most on phones. */
   private addDeviceMonitors(pane: Pane, renderer: any) {
     const device = {
       backend: renderer.backend?.isWebGPUBackend ? "WebGPU" : "WebGL2",
@@ -196,9 +195,10 @@ export class DebugClass {
       pixelRatio: renderer.getPixelRatio(),
     };
     const folder = pane.addFolder({ title: "Device" });
-    for (const key of Object.keys(device) as (keyof typeof device)[]) {
-      folder.addBinding(device, key, { readonly: true });
-    }
+    folder.addBinding(device, "backend", { readonly: true });
+    folder.addBinding(device, "gpu", { readonly: true });
+    folder.addBinding(device, "tier", { readonly: true });
+    folder.addBinding(device, "pixelRatio", { readonly: true });
   }
 
   /** Shared-loop cost: the whole loop as a graph, and each callback's share, read at poll time. */

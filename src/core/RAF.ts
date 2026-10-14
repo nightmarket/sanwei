@@ -137,7 +137,6 @@ class RefreshClock {
   }
 
   reset() {
-    this.debt = 0;
     this.misfits.length = 0;
   }
 
@@ -265,7 +264,6 @@ class RAFBase {
     this.rafId = requestAnimationFrame(this.update);
 
     for (const subscriber of this.subscribers) {
-      // Only the frame right after a callback's run says whether that run made its refresh.
       subscriber.dropped ??= Math.max(0, this.clock.refreshes - 1);
       if (!subscriber.active || !this.isDue(subscriber, frameDelta)) continue;
       state.delta = clamp((this.time - subscriber.lastTime) / 1000, 0, MAX_DELTA_S);
