@@ -1,6 +1,7 @@
 import { positionGeometry, texture, uniform, uv, vec4 } from "three/tsl";
 import {
   type Camera,
+  ColorManagement,
   DepthTexture,
   HalfFloatType,
   Mesh,
@@ -104,7 +105,11 @@ export class TrailEffect {
 
     const type = options.type ?? HalfFloatType;
     const depthTexture = new DepthTexture(1, 1);
+    // three shares one render context between targets of the same format, type, samples and depth, and
+    // rebuilds every pipeline when their color spaces differ. Its own frame buffer target (sRGB screens,
+    // no MSAA) is tagged with the working space, so this one is too; it converts nothing either way.
     this.currentFrame = new RenderTarget(1, 1, { type, depthTexture });
+    this.currentFrame.texture.colorSpace = ColorManagement.workingColorSpace;
     this.currentTexNode = texture(this.currentFrame.texture);
     this.currentDepthTexNode = texture(depthTexture);
     this.layers = Array.from({ length: options.layers ?? 1 }, () => {
