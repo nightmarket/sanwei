@@ -1,6 +1,6 @@
 {
   "name": "@nightmarket/sanwei",
-  "version": "0.9.5",
+  "version": "0.9.13",
   "description": "Three.js / WebGPU scene engine — managers, postprocessing, and debug tooling.",
   "keywords": [
     "three",
@@ -82,10 +82,10 @@
     "@biomejs/biome": "2.2.0",
     "@nightmarket/tiao": "^0.7.0",
     "@types/node": "^22.15.0",
-    "@types/three": "^0.186.0",
+    "@types/three": "^0.187.0",
     "@webgpu/types": "^0.1.74",
     "gsap": "^3.13.0",
-    "three": "^0.186.1",
+    "three": "^0.187.0",
     "typescript": "5.9.2"
   }
 }

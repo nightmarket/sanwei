@@ -49,11 +49,13 @@ Each callback gets a `FrameState`: `time` (loop ms, excluding pauses), `timestam
 
 Per-frame tuning is for one frame at `TUNED_FPS`: scale steps by `frame.frames` and compound lerp factors with `frame.lerpFactor`. `Mouse` eases and reports `scroll.velocity` this way, and `TrailEffect.update` takes the frame count for its per-step feedback, so both read the same at any refresh rate.
 
-### Touch scrolling
+### Scrolling
 
-A finger moves `Mouse.scroll` by `Mouse.touchScale` scroll units per CSS px on each axis; set it so whatever is under the finger stays under it. A touch drag reads its moves a refresh behind the frame, so it steps evenly however the touches land between frames, and its fling leaves at the finger's recent speed and slows like iOS's normal deceleration.
+Every input moves `Mouse.scroll` by `Mouse.scrollPerPx` scroll units per CSS px on each axis: a wheel or trackpad's delta, a mouse or touch drag's travel, and an attached scroller's offset. Set it so whatever is under the pointer moves with it, and each input scrolls the same on-screen distance whatever the scroll units are. A wheel event scrolls as far as a page would scroll for it. A trackpad moves the scroll straight away, since its inertia arrives as more events, and a mouse wheel's notch glides there under `Mouse.wheelFriction`, so the wheel coasts on instead of stopping at its last notch. A page with its own wheel listener (a smooth scroller) can hand events over with `Mouse.handleWheel(event)`, which returns false over UI.
 
-For the platform's own scrolling, `Mouse.attachScroller(element)` hands touch scrolling to a transparent native scroller laid over the scene, many screens long on the axes it scrolls. Tracking, flings, deceleration and tap-to-stop are then the browser's, `scroll` follows the scroller's offset through `touchScale`, and the scroller goes back to mid-range whenever it settles. Call `Mouse.centerScroller()` after changing its size or axes.
+A touch drag reads its moves a refresh behind the frame, so it steps evenly however the touches land between frames, and its fling leaves at the finger's recent speed and slows like iOS's normal deceleration.
+
+For the platform's own scrolling, `Mouse.attachScroller(element)` hands touch scrolling to a transparent native scroller laid over the scene, many screens long on the axes it scrolls. Tracking, flings, deceleration and tap-to-stop are then the browser's, `scroll` follows the scroller's offset through `scrollPerPx`, and the scroller goes back to mid-range whenever it settles. Call `Mouse.centerScroller()` after changing its size or axes.
 
 ### Assets
 

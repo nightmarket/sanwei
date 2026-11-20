@@ -1,5 +1,4 @@
 import type { PaneOptions } from "@nightmarket/tiao/core";
-import { Accelerometer } from "./Accelerometer";
 import { AdaptivePixelRatio } from "./AdaptivePixelRatio";
 import { AssetManager } from "./AssetManager";
 import { CameraManager } from "./CameraManager";
@@ -24,7 +23,6 @@ function ensureGlobals() {
   globalsReady ??= (async () => {
     RAF.init();
     await Device.init();
-    Accelerometer.init();
     Mouse.init();
     AssetManager.init();
     Input.init();
@@ -129,6 +127,8 @@ export class SanweiApp {
   private rectMode: RectMode;
   private isIntersecting = true;
   private hasSize = false;
+  /** An observed resize waiting for the next tick (`queueResize`). */
+  private resizePending = false;
   private resizeObserver: ResizeObserver | null = null;
   private intersectionObserver: IntersectionObserver | null = null;
   private cachedRect: DOMRect | null = null;
@@ -197,7 +197,7 @@ export class SanweiApp {
 
     this.handleResize();
     if (this.canvas.parentElement) {
-      this.resizeObserver = new ResizeObserver(this.handleResize);
+      this.resizeObserver = new ResizeObserver(this.queueResize);
       this.resizeObserver.observe(this.canvas.parentElement);
     }
     this.attachVisibility();
@@ -248,8 +248,9 @@ export class SanweiApp {
     const adaptive = this.adaptivePixelRatio;
     if (adaptive?.update(frame)) {
       this.uniforms.uPixelRatio.value = adaptive.ratio;
-      this.handleResize();
+      this.resizePending = true;
     }
+    if (this.resizePending) this.handleResize();
     if (!this.hasSize) return;
     this.updatePointer();
     this.scenes.render();
@@ -257,12 +258,21 @@ export class SanweiApp {
   };
 
   handleResize = () => {
+    this.resizePending = false;
     this.hasSize = this.rendererManager.resize();
     this.refreshRect();
     if (!this.hasSize) return;
     // Cameras first: scenes size their passes and bounds from the camera's new aspect.
     this.cameras.resize();
     this.scenes.resize();
+  };
+
+  /** Resizing clears the canvas, and resize observers run after this frame's render, so a resize applied
+   * there would paint the canvas blank. While the loop ticks, it waits for the next tick to resize and
+   * redraw in one go; the old frame shows stretched meanwhile. */
+  private queueResize = () => {
+    if (this.ticking) this.resizePending = true;
+    else this.handleResize();
   };
 
   private syncTick() {
@@ -279,6 +289,7 @@ export class SanweiApp {
       this.unsubscribeTick = null;
       releaseGlobalTick();
       this.renderer._animation?.stop();
+      if (this.resizePending) this.handleResize();
     }
   }
 

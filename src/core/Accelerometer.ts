@@ -7,6 +7,8 @@ type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
 const ORIENTATION_RANGE_DEGREES = 30;
 const MAX_TILT_RADIANS = 0.05;
 
+/** The phone's tilt, from `deviceorientation`. Opt-in: call `init()` to start it, since iOS asks the visitor
+ * to allow motion access on their first tap. */
 class AccelerometerClass {
   isSingleton = true;
   orientation = {
@@ -45,6 +47,14 @@ class AccelerometerClass {
     this.isListeningToOrientation = true;
   };
 
+  /** iOS only asks from a user activation, which a touch's `pointerdown` isn't; a tap's `touchend` is. */
+  private addPermissionListeners = () => {
+    this.permissionEvents = ["touchend", "click"];
+    for (const eventName of this.permissionEvents) {
+      window.addEventListener(eventName, this.requestPermission);
+    }
+  };
+
   private removePermissionListeners = () => {
     for (const eventName of this.permissionEvents) {
       window.removeEventListener(eventName, this.requestPermission);
@@ -68,6 +78,8 @@ class AccelerometerClass {
         const permission = await OrientationEvent.requestPermission();
         if (permission !== "granted") return false;
       } catch {
+        // Asked outside a user gesture (a swipe's `touchend`): ask again on the next tap.
+        this.addPermissionListeners();
         return false;
       }
     }
@@ -79,15 +91,8 @@ class AccelerometerClass {
   init() {
     if (!Device.isMobile || !this.supportsOrientation()) return;
 
-    const OrientationEvent = this.orientationEventConstructor;
-    if (typeof OrientationEvent?.requestPermission === "function") {
-      this.permissionEvents = window.PointerEvent ? ["pointerdown"] : ["touchend", "click"];
-      for (const eventName of this.permissionEvents) {
-        window.addEventListener(eventName, this.requestPermission);
-      }
-    } else {
-      this.startOrientationListener();
-    }
+    if (typeof this.orientationEventConstructor?.requestPermission === "function") this.addPermissionListeners();
+    else this.startOrientationListener();
   }
 
   destroy() {

@@ -12,10 +12,10 @@ import {
   RenderTarget,
   type Scene,
   type TextureDataType,
+  type TextureNode,
+  type UniformNode,
   Vector2,
 } from "three/webgpu";
-
-type TextureNode = ReturnType<typeof texture>;
 
 export type TrailCompositeContext = {
   /** This frame's scene render and its depth buffer. */
@@ -23,10 +23,10 @@ export type TrailCompositeContext = {
   currentDepthTex: TextureNode;
   /** Previous output of every layer, by layer index. */
   history: TextureNode[];
-  screenSize: ReturnType<typeof uniform>;
+  screenSize: UniformNode<"vec2">;
   /** The `frames` passed to `update`. Per-step feedback (decay, advection) compounds by it so the
    * trail reads the same at any refresh rate. */
-  frames: ReturnType<typeof uniform>;
+  frames: UniformNode<"float">;
 };
 
 export type TrailPresentContext = {
@@ -35,7 +35,7 @@ export type TrailPresentContext = {
   currentTex: TextureNode;
   currentDepthTex: TextureNode;
   /** Size of the trail targets in texels. */
-  screenSize: ReturnType<typeof uniform>;
+  screenSize: UniformNode<"vec2">;
 };
 
 export type TrailEffectOptions = {
@@ -204,9 +204,13 @@ export class TrailEffect {
       layer.quad.render(renderer);
     }
     renderer.autoClear = autoClear;
+    const { width, height } = this.currentFrame;
     for (let i = 0; i < this.activeLayers; i++) {
       const layer = this.layers[i];
-      if (layer) [layer.old, layer.comp] = [layer.comp, layer.old];
+      if (!layer) continue;
+      [layer.old, layer.comp] = [layer.comp, layer.old];
+      // The history this composite read, still at the size before a resize, is now the scratch target.
+      if (layer.comp.width !== width || layer.comp.height !== height) layer.comp.setSize(width, height);
     }
     for (const layer of this.layers) layer.history.value = layer.old.texture;
   }
@@ -215,6 +219,8 @@ export class TrailEffect {
     this.presentQuad.render(this.renderer);
   }
 
+  /** Keeps the trail through a resize: the history stays at its old size until the next `update`
+   * composites it, sampled by screen UV, into a target at the new one. */
   resize() {
     const screen = this.getScreenSize();
     const width = Math.max(1, Math.ceil(screen.x * this.resolutionScale));
@@ -222,12 +228,8 @@ export class TrailEffect {
     if (this.currentFrame.width === width && this.currentFrame.height === height) return;
 
     this.currentFrame.setSize(width, height);
-    for (const layer of this.layers) {
-      layer.comp.setSize(width, height);
-      layer.old.setSize(width, height);
-    }
+    for (const layer of this.layers) layer.comp.setSize(width, height);
     this.uTrailScreen.value.set(width, height);
-    this.clear();
   }
 
   destroy() {

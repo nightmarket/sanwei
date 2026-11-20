@@ -4,38 +4,25 @@ import { events, getPos } from "../util/responsive";
 import { NO_RAYCAST_CLASS } from "./constants";
 import { type FrameState, TUNED_FPS } from "./RAF";
 
-/** Cap per wheel event so one mouse-wheel tick (~100-120px) doesn't jump `scroll.target` much
- * farther than a trackpad swipe (~1-20px) would. The `scroll.target → scroll.current` lerp in
- * `update()` then spreads each clamped tick over several frames, giving wheel + trackpad the
- * same inertial feel. */
-const MAX_WHEEL_STEP_PX = 40;
-const COARSE_WHEEL_THRESHOLD_PX = 50;
 // Click/tap classification follows common UI slop: short release plus little pointer travel.
 const CLICK_MAX_DURATION_MS = 500;
-const LONG_PRESS_DRAG_DELAY_MS = 500;
 const MOUSE_CLICK_MOVE_THRESHOLD_PX = 5;
 const TOUCH_CLICK_MOVE_THRESHOLD_PX = 12;
-const MOUSE_DRAG_SCROLL_SCALE = 100;
-const DRAG_MOMENTUM_FRAME_MS = 1000 / 60;
-const DRAG_MOMENTUM_SCALE = 0.6;
-const DRAG_MOMENTUM_FRICTION = 0.96;
-/** A finger's fling slows the way UIScrollView's normal deceleration does: 0.2% of its speed lost each ms. */
-const TOUCH_MOMENTUM_FRICTION = 0.998 ** (1000 / TUNED_FPS);
+/** A fling, a finger's or a mouse's, slows the way UIScrollView's normal deceleration does: 0.2% of its
+ * speed lost each ms. */
+const FLING_FRICTION = 0.998 ** (1000 / TUNED_FPS);
 const DRAG_MOMENTUM_STOP_THRESHOLD_SQ = 0.000025;
 /** Frames a native scroller sits still, with no finger on it, before it goes back to mid-range. */
 const SCROLLER_SETTLE_FRAMES = 12;
-/** A touch fling leaves at the finger's average speed over its last this-many ms, so a finger held still
- * before lifting lets go without one. */
-const TOUCH_RELEASE_WINDOW_MS = 50;
-/** Moves a touch drag keeps for reading back: over 100 ms of them at 240 Hz. */
-const TOUCH_TRAIL_LENGTH = 32;
-const WHEEL_MOMENTUM_SCALE = 0.08;
-const WHEEL_MOMENTUM_FRICTION = 0.94;
-const WHEEL_MOMENTUM_STOP_THRESHOLD_SQ = 0.000025;
-const TRACKPAD_WHEEL_STEP_SCALE = 0.5;
-const COARSE_WHEEL_STEP_SCALE = 0.8;
-const MAX_COARSE_WHEEL_STEP_PX = 140;
-const MAX_WHEEL_MOMENTUM = 24;
+/** A fling leaves at the pointer's average speed over its last this-many ms, so a pointer held still
+ * before letting go lets go without one. */
+const RELEASE_WINDOW_MS = 50;
+/** Moves a drag keeps for reading back: over 100 ms of them at 240 Hz, over 60 ms of a 1000 Hz mouse's. */
+const DRAG_TRAIL_LENGTH = 64;
+/** A wheel event moving this many CSS px or more is a mouse wheel's notch; a trackpad's run smaller. */
+const WHEEL_NOTCH_PX = 50;
+/** A wheel's glide stops under this many CSS px per frame. */
+const WHEEL_GLIDE_STOP_PX = 0.05;
 
 const NO_RAYCAST_SELECTOR = `.${NO_RAYCAST_CLASS}`;
 
@@ -52,7 +39,6 @@ export interface MouseDragState {
   active: boolean;
   isDragging: boolean;
   startTime: number;
-  lastMoveTime: number;
   momentumVelocity: Vector2;
   /** A finger, not a mouse: the scroll follows it 1:1 instead of easing after it. */
   touch: boolean;
@@ -79,8 +65,8 @@ const clickMoveThreshold = (e: MouseEvent | TouchEvent) =>
 
 type TouchSample = { time: number; x: number; y: number };
 
-/** A touch drag's recent scroll targets at their moves' timestamps, oldest first. */
-class TouchTrail {
+/** A drag's recent scroll targets at their moves' timestamps, oldest first. */
+class DragTrail {
   private samples: TouchSample[] = [];
 
   clear() {
@@ -96,7 +82,7 @@ class TouchTrail {
       return;
     }
     this.samples.push({ time, x, y });
-    if (this.samples.length > TOUCH_TRAIL_LENGTH) this.samples.shift();
+    if (this.samples.length > DRAG_TRAIL_LENGTH) this.samples.shift();
   }
 
   /** The target at `time`, between the moves around it; past the newest, carried on along the last move
@@ -147,7 +133,6 @@ class MouseClass {
     active: false,
     isDragging: false,
     startTime: 0,
-    lastMoveTime: 0,
     momentumVelocity: new Vector2(),
     touch: false,
   };
@@ -155,17 +140,23 @@ class MouseClass {
   /** Refreshes a touch drag reads behind each frame. Its moves are timestamped, so reading a little behind
    * the newest steps the scroll evenly however the moves land between frames; 0 reads the newest. */
   touchReadDelay = 1;
-  /** Scroll units per CSS px a finger travels, on each axis, for a touch drag and for an attached
-   * scroller alike. Set it so whatever is under the finger stays under it. */
-  touchScale = new Vector2(1, 1);
+  /** Scroll units per CSS px, on each axis, for every input: a wheel or trackpad's delta, a mouse or touch
+   * drag's travel and an attached scroller's offset. Set it so whatever is under the pointer moves with it,
+   * and each input then scrolls the same on-screen distance whatever the scroll units mean. */
+  scrollPerPx = new Vector2(1, 1);
+  /** Share of a mouse wheel's glide speed kept each frame. A notch scrolls as far at any value; higher glides
+   * it out longer, and 0 lands it at once for the scroll ease to take. */
+  wheelFriction = 0.93;
+  /** Ms a press held still waits before it becomes a drag anyway. */
+  longPressDragMs = 500;
 
   private lastPosition = new Vector2();
+  /** A mouse wheel's notches as a glide, in CSS px per frame. */
+  private wheelVelocity = new Vector2();
   private lastTime: number | null = null;
   private dragStartPx = new Vector2();
-  private wheelMomentumVelocity = new Vector2();
-  private wheelMomentumScratch = new Vector2();
-  private touchTrail = new TouchTrail();
-  private touchReleaseScratch = new Vector2();
+  private dragTrail = new DragTrail();
+  private releaseScratch = new Vector2();
   /** The press landed on a fling and stopped it, so lifting it isn't a click. */
   private stoppedFling = false;
   private scroller: HTMLElement | null = null;
@@ -188,11 +179,12 @@ class MouseClass {
     this.drag.isDragging = true;
     // A finger's scroll follows it 1:1 from here, so the travel that told the drag from a tap is slop, as
     // in native scrolling, rather than a jump.
-    if (!this.drag.touch) return;
-    this.drag.start.copy(this.position);
-    this.scroll.dragStart.copy(this.scroll.target);
-    this.touchTrail.clear();
-    this.touchTrail.push(now, this.scroll.target);
+    if (this.drag.touch) {
+      this.drag.start.copy(this.position);
+      this.scroll.dragStart.copy(this.scroll.target);
+    }
+    this.dragTrail.clear();
+    this.dragTrail.push(now, this.scroll.target);
   };
 
   private updatePosition = (e: MouseEvent | TouchEvent, now: number) => {
@@ -212,42 +204,25 @@ class MouseClass {
   };
 
   private updateDragTarget = (now: number) => {
-    const deltaX = this.position.x - this.drag.start.x;
-    const deltaY = this.position.y - this.drag.start.y;
-
-    if (this.drag.touch) {
-      // One NDC unit spans half the viewport on each axis.
-      this.scroll.target.set(
-        this.scroll.dragStart.x - deltaX * (window.innerWidth / 2) * this.touchScale.x,
-        this.scroll.dragStart.y + deltaY * (window.innerHeight / 2) * this.touchScale.y
-      );
-      this.touchTrail.push(now, this.scroll.target);
-      return;
-    }
-
-    const targetX = this.scroll.dragStart.x - deltaX * MOUSE_DRAG_SCROLL_SCALE;
-    const targetY = this.scroll.dragStart.y + deltaY * MOUSE_DRAG_SCROLL_SCALE;
-    if (targetX !== this.scroll.target.x || targetY !== this.scroll.target.y) {
-      const elapsed = Math.max(now - this.drag.lastMoveTime, 1);
-      const scale = (DRAG_MOMENTUM_FRAME_MS / elapsed) * DRAG_MOMENTUM_SCALE;
-      this.drag.momentumVelocity.set(
-        (targetX - this.scroll.target.x) * scale,
-        (targetY - this.scroll.target.y) * scale
-      );
-      this.drag.lastMoveTime = now;
-    }
+    // One NDC unit spans half the viewport on each axis.
+    const targetX =
+      this.scroll.dragStart.x - (this.position.x - this.drag.start.x) * (window.innerWidth / 2) * this.scrollPerPx.x;
+    const targetY =
+      this.scroll.dragStart.y + (this.position.y - this.drag.start.y) * (window.innerHeight / 2) * this.scrollPerPx.y;
 
     this.scroll.target.set(targetX, targetY);
+    this.dragTrail.push(now, this.scroll.target);
   };
 
-  /** The fling leaves from where the scroll shows, at the finger's recent speed, so it carries the drag on
-   * instead of jumping to the finger and easing after it. */
-  private releaseTouch = (now: number) => {
-    const from = this.touchTrail.read(now - TOUCH_RELEASE_WINDOW_MS, this.touchReleaseScratch);
+  /** The fling leaves at the pointer's recent speed, in scroll units per `TUNED_FPS` frame. A finger's
+   * leaves from where the scroll shows, so it carries the drag on instead of jumping to the finger and
+   * easing after it; a mouse's carries on from its target, which the scroll eases after all along. */
+  private releaseDrag = (now: number) => {
+    const from = this.dragTrail.read(now - RELEASE_WINDOW_MS, this.releaseScratch);
     this.drag.momentumVelocity
       .subVectors(this.scroll.target, from)
-      .multiplyScalar(1000 / TUNED_FPS / TOUCH_RELEASE_WINDOW_MS);
-    this.scroll.target.copy(this.scroll.current);
+      .multiplyScalar(1000 / TUNED_FPS / RELEASE_WINDOW_MS);
+    if (this.drag.touch) this.scroll.target.copy(this.scroll.current);
   };
 
   // Timed by the events' own timestamps rather than when their handlers ran, so a busy frame between two
@@ -283,15 +258,14 @@ class MouseClass {
     this.drag.active = true;
     this.drag.isDragging = false;
     this.drag.startTime = now;
-    this.drag.lastMoveTime = now;
     this.drag.start.copy(this.position);
     this.dragStartPx.set(x, y);
     this.scroll.dragStart.copy(this.scroll.target);
     this.drag.momentumVelocity.set(0, 0);
-    this.wheelMomentumVelocity.set(0, 0);
+    this.wheelVelocity.set(0, 0);
     this.scroll.velocity.set(0, 0);
     // With a scroller attached the browser decides what's a drag.
-    if (!this.scroller) this.dragLongPressTimeout = window.setTimeout(this.startDrag, LONG_PRESS_DRAG_DELAY_MS);
+    if (!this.scroller) this.dragLongPressTimeout = window.setTimeout(this.startDrag, this.longPressDragMs);
   };
 
   private handleMouseup = (e: MouseEvent | TouchEvent) => {
@@ -313,7 +287,7 @@ class MouseClass {
 
     if (this.drag.isDragging && !this.scroller) {
       this.updateDragTarget(now);
-      if (this.drag.touch) this.releaseTouch(now);
+      this.releaseDrag(now);
     }
 
     this.drag.active = false;
@@ -333,43 +307,31 @@ class MouseClass {
     this.drag.isDragging = false;
   };
 
-  private applyWheelDelta = (pixelX: number, pixelY: number, isCoarseWheel: boolean) => {
-    this.drag.momentumVelocity.set(0, 0);
-    const stepScale = isCoarseWheel ? COARSE_WHEEL_STEP_SCALE : TRACKPAD_WHEEL_STEP_SCALE;
-    const maxStep = isCoarseWheel ? MAX_COARSE_WHEEL_STEP_PX : MAX_WHEEL_STEP_PX;
-    const stepX = MathUtils.clamp(pixelX, -maxStep, maxStep) * stepScale;
-    const stepY = MathUtils.clamp(pixelY, -maxStep, maxStep) * stepScale;
-    this.scroll.target.x += stepX;
-    this.scroll.target.y += stepY;
-    this.scroll.velocity.set(stepX / 10, stepY / 10);
+  /**
+   * Scrolls by a wheel event's travel in CSS px, through `scrollPerPx`, as far as a page would scroll for it.
+   * A trackpad moves the scroll straight away, since its inertia arrives as more events. A mouse wheel's
+   * notch, which has none, glides there under `wheelFriction`. False over UI, which keeps the wheel. Each
+   * event counts once, so a page can hand one over before it reaches the window's listener.
+   */
+  handleWheel = (e: WheelEvent) => {
+    if (isOverUi(e)) return false;
+    if (this.handledWheelEvents.has(e) || this.isScrollLocked) return true;
+    this.handledWheelEvents.add(e);
 
-    if (isCoarseWheel) {
-      this.wheelMomentumVelocity
-        .add(this.wheelMomentumScratch.set(stepX * WHEEL_MOMENTUM_SCALE, stepY * WHEEL_MOMENTUM_SCALE))
-        .clampLength(0, MAX_WHEEL_MOMENTUM);
-    } else {
-      this.wheelMomentumVelocity.set(0, 0);
-    }
-  };
-
-  handleWheelDelta = (pixelX: number, pixelY: number, event?: WheelEvent) => {
-    if (event) this.handledWheelEvents.add(event);
-    if (event && isOverUi(event)) return false;
-
-    const isCoarseWheel =
-      event?.deltaMode !== 0 || Math.max(Math.abs(pixelX), Math.abs(pixelY)) >= COARSE_WHEEL_THRESHOLD_PX;
-
-    if (this.isScrollLocked) return true;
-
-    this.applyWheelDelta(pixelX, pixelY, isCoarseWheel);
-
-    return true;
-  };
-
-  private handleWheel = (e: WheelEvent) => {
-    if (this.handledWheelEvents.has(e)) return;
     const { pixelX, pixelY } = normalizeWheel(e);
-    this.handleWheelDelta(pixelX, pixelY, e);
+    this.drag.momentumVelocity.set(0, 0);
+    const notch =
+      e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL || Math.max(Math.abs(pixelX), Math.abs(pixelY)) >= WHEEL_NOTCH_PX;
+    if (notch && this.wheelFriction > 0) {
+      // The glide travels `speed * friction / (1 - friction)` in all, so this speed covers the notch.
+      const speed = (1 - this.wheelFriction) / this.wheelFriction;
+      this.wheelVelocity.x += pixelX * speed;
+      this.wheelVelocity.y += pixelY * speed;
+      return true;
+    }
+    this.scroll.target.x += pixelX * this.scrollPerPx.x;
+    this.scroll.target.y += pixelY * this.scrollPerPx.y;
+    return true;
   };
 
   init = () => {
@@ -379,15 +341,13 @@ class MouseClass {
     window.addEventListener(events.up, this.handleMouseup as EventListener, { passive: true });
     if (events.cancel) window.addEventListener(events.cancel, this.cancelDrag, { passive: true });
 
-    if (events.wheel) {
-      window.addEventListener(events.wheel, this.handleWheel as EventListener, { passive: true });
-    }
+    if (events.wheel) window.addEventListener("wheel", this.handleWheel, { passive: true });
   };
 
   /**
    * Hand touch scrolling to a native scroller over the scene, or back to drags with `null`. A finger then
    * scrolls it as the platform scrolls any page, tracking, flinging, decelerating, and stopping on a tap, and
-   * `scroll` follows its offset through `touchScale`. Give it a range many screens long; it goes back to the
+   * `scroll` follows its offset through `scrollPerPx`. Give it a range many screens long; it goes back to the
    * middle once it settles, so it never runs out.
    */
   attachScroller = (element: HTMLElement | null) => {
@@ -420,8 +380,8 @@ class MouseClass {
    * lift its fling, read back as `drag.momentumVelocity`. */
   private followScroller(frames: number) {
     // A finger moving left or up scrolls the scroller forward, as a drag moves `scroll` forward.
-    const stepX = (this.scrollerOffset.x - this.scrollerLast.x) * this.touchScale.x;
-    const stepY = (this.scrollerOffset.y - this.scrollerLast.y) * this.touchScale.y;
+    const stepX = (this.scrollerOffset.x - this.scrollerLast.x) * this.scrollPerPx.x;
+    const stepY = (this.scrollerOffset.y - this.scrollerLast.y) * this.scrollPerPx.y;
     this.scrollerLast.copy(this.scrollerOffset);
     const moving = stepX !== 0 || stepY !== 0;
     this.drag.isDragging = this.drag.active && (this.drag.isDragging || moving);
@@ -446,31 +406,37 @@ class MouseClass {
   reset = () => {
     this.cancelDrag();
     this.drag.momentumVelocity.set(0, 0);
-    this.wheelMomentumVelocity.set(0, 0);
+    this.wheelVelocity.set(0, 0);
     this.scroll.velocity.set(0, 0);
     this.scroll.current.set(0, 0);
     this.scroll.target.set(0, 0);
     this.scroll.last.set(0, 0);
     this.scroll.dragStart.set(0, 0);
     this.scrollDirection.set(SCROLL_DIRECTION.NONE, SCROLL_DIRECTION.NONE);
-    this.touchTrail.clear();
+    this.dragTrail.clear();
   };
 
   private applyMomentum(frames: number) {
     if (this.drag.momentumVelocity.lengthSq() > DRAG_MOMENTUM_STOP_THRESHOLD_SQ) {
-      const friction = this.drag.touch ? TOUCH_MOMENTUM_FRICTION : DRAG_MOMENTUM_FRICTION;
-      this.drag.momentumVelocity.multiplyScalar(friction ** frames);
+      this.drag.momentumVelocity.multiplyScalar(FLING_FRICTION ** frames);
       this.scroll.target.addScaledVector(this.drag.momentumVelocity, frames);
     } else {
       this.drag.momentumVelocity.set(0, 0);
     }
+  }
 
-    if (this.wheelMomentumVelocity.lengthSq() > WHEEL_MOMENTUM_STOP_THRESHOLD_SQ) {
-      this.wheelMomentumVelocity.multiplyScalar(WHEEL_MOMENTUM_FRICTION ** frames);
-      this.scroll.target.addScaledVector(this.wheelMomentumVelocity, frames);
-    } else {
-      this.wheelMomentumVelocity.set(0, 0);
+  private glideWheel(frames: number) {
+    const velocity = this.wheelVelocity;
+    if (Math.max(Math.abs(velocity.x), Math.abs(velocity.y)) < WHEEL_GLIDE_STOP_PX) {
+      velocity.set(0, 0);
+      return;
     }
+    // Over `frames` the glide covers the sum of its speeds as they decay, its exact path at `TUNED_FPS`.
+    const decay = this.wheelFriction ** frames;
+    const travel = (this.wheelFriction * (1 - decay)) / (1 - this.wheelFriction);
+    this.scroll.target.x += velocity.x * travel * this.scrollPerPx.x;
+    this.scroll.target.y += velocity.y * travel * this.scrollPerPx.y;
+    velocity.multiplyScalar(decay);
   }
 
   /** Momentum, friction, and the scroll ease are per `TUNED_FPS` frame, scaled by `frame.frames`. */
@@ -480,10 +446,11 @@ class MouseClass {
 
     if (this.scroller) this.followScroller(frames);
     else if (!this.drag.active) this.applyMomentum(frames);
+    this.glideWheel(frames);
 
     const syntheticTouch = this.drag.touch && !this.scroller;
     if (syntheticTouch && this.drag.isDragging) {
-      this.touchTrail.read(frame.timestamp - this.touchReadDelay * frame.interval, this.scroll.current);
+      this.dragTrail.read(frame.timestamp - this.touchReadDelay * frame.interval, this.scroll.current);
     } else if (syntheticTouch && this.drag.momentumVelocity.lengthSq() > 0) {
       this.scroll.current.copy(this.scroll.target);
     } else {
@@ -522,9 +489,7 @@ class MouseClass {
     window.removeEventListener(events.up, this.handleMouseup as EventListener);
     if (events.cancel) window.removeEventListener(events.cancel, this.cancelDrag);
 
-    if (events.wheel) {
-      window.removeEventListener(events.wheel, this.handleWheel as EventListener);
-    }
+    if (events.wheel) window.removeEventListener("wheel", this.handleWheel);
 
     this.attachScroller(null);
     this.handledWheelEvents = new WeakSet<WheelEvent>();
